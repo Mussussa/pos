@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@import "tailwindcss";
+
+@media print {
+  @page {
+    margin: 0; /* Remove automaticamente a data, rodapé e o endereço localhost */
+  }
+}
