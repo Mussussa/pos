@@ -11,7 +11,7 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["logo_vulpe_instinct.png"], 
       manifest: {
-        name: "Auto Center Gestão e POS",
+        name: "Vulpe Mart",
         short_name: "AutoCenter",
         description: "Sistema de Ponto de Venda e Gestão de Stock Offline",
         theme_color: "#09090b", 
