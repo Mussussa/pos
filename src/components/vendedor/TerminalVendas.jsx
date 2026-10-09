@@ -19,12 +19,16 @@ export function TerminalVendas() {
     { id: 'diversos', label: 'Diversos' }
   ];
 
+// 1. Calcula a contagem de vendas (Memoizado para não recalcular a cada render)
   const contagemVendas = useMemo(() => {
     const contagem = {};
     vendas?.forEach(v => {
-      v.itens?.forEach(item => {
-        contagem[item.produtoId] = (contagem[item.produtoId] || 0) + item.quantidade;
-      });
+      // PROTEÇÃO: Verifica se 'v.itens' existe E se é realmente um Array antes de fazer o forEach
+      if (v.itens && Array.isArray(v.itens)) {
+        v.itens.forEach(item => {
+          contagem[item.produtoId] = (contagem[item.produtoId] || 0) + item.quantidade;
+        });
+      }
     });
     return contagem;
   }, [vendas]);
