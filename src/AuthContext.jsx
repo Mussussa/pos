@@ -14,12 +14,10 @@ export function AuthProvider({ children }) {
   }, []);
 
   const verificarSistema = async () => {
-    // Verifica se já há um admin criado na base de dados
     const adminExist = await db.usuarios.where('role').equals('admin').first();
     setNeedsSetup(!adminExist);
 
-    // Verifica se o navegador já tem uma sessão guardada do último login
-    const sessaoGuardada = localStorage.getItem('loja_session');
+    const sessaoGuardada = localStorage.getItem('vulpe_mart_session');
     if (sessaoGuardada) {
       setUser(JSON.parse(sessaoGuardada));
     }
@@ -45,16 +43,16 @@ export function AuthProvider({ children }) {
     if (!senhaValida) throw new Error('Senha incorreta.');
 
     const sessao = { id: dbUser.id, username: dbUser.username, role: dbUser.role };
-    localStorage.setItem('loja_session', JSON.stringify(sessao));
+    localStorage.setItem('vulpe_mart_session', JSON.stringify(sessao));
     setUser(sessao);
   };
 
   const logout = () => {
-    localStorage.removeItem('loja_session');
+    localStorage.removeItem('vulpe_mart_session');
     setUser(null);
   };
 
-  if (loading) return <div className="h-screen bg-zinc-950 flex items-center justify-center text-zinc-500 font-mono">A iniciar sistema de segurança...</div>;
+  if (loading) return <div className="h-screen bg-zinc-950 flex items-center justify-center text-orange-500 font-mono">A iniciar sistema Vulpe Mart...</div>;
 
   return (
     <AuthContext.Provider value={{ user, needsSetup, configurarAdmin, login, logout }}>

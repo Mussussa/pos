@@ -8,7 +8,6 @@ export function BackupGlobal() {
   const [pastaConfigurada, setPastaConfigurada] = useState(false);
   const [ultimoBackup, setUltimoBackup] = useState(null);
 
-  // Vai buscar a chave diretamente ao ficheiro .env
   const CHAVE_SECRETA = import.meta.env.VITE_CHAVE_BACKUP || "CHAVE_FALHA_SEGURANCA";
 
   useEffect(() => {
@@ -38,16 +37,13 @@ export function BackupGlobal() {
     }
   };
 
-  // ==========================================
-  // MOTOR DE CRIPTOGRAFIA AES
-  // ==========================================
   const derivarChaveAES = async () => {
     const enc = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey(
       "raw", enc.encode(CHAVE_SECRETA), { name: "PBKDF2" }, false, ["deriveBits", "deriveKey"]
     );
     return crypto.subtle.deriveKey(
-      { name: "PBKDF2", salt: enc.encode("sal_fixo_auto_center"), iterations: 100000, hash: "SHA-256" },
+      { name: "PBKDF2", salt: enc.encode("sal_fixo_vulpe_mart"), iterations: 100000, hash: "SHA-256" },
       keyMaterial, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
     );
   };
@@ -75,9 +71,6 @@ export function BackupGlobal() {
     return new TextDecoder().decode(bufferAberto);
   };
 
-  // ==========================================
-  // EXPORTAÇÃO CIFRADA COM NORMALIZAÇÃO DE DADOS
-  // ==========================================
   const executarBackup = async (forcarManual = false) => {
     try {
       setStatus('A gerar ficheiros encriptados...');
@@ -98,7 +91,6 @@ export function BackupGlobal() {
       const produtosBrutos = await db.produtos.toArray();
       const vendasBrutas = await db.vendas.toArray();
 
-      // Normaliza os produtos para garantir que a coluna dataCriacao existe sempre
       const produtosNormalizados = produtosBrutos.map(p => ({
         id: p.id,
         nome: p.nome,
@@ -109,7 +101,6 @@ export function BackupGlobal() {
         dataCriacao: p.dataCriacao || 'Data não registada'
       }));
 
-      // Transforma em CSV e criptografa
       const cifradoProdutos = await encriptar(Papa.unparse(produtosNormalizados));
       const cifradoVendas = await encriptar(Papa.unparse(vendasBrutas));
 
@@ -152,9 +143,6 @@ export function BackupGlobal() {
     }
   };
 
-  // ==========================================
-  // IMPORTAÇÃO E DESENCRIPTAÇÃO
-  // ==========================================
   const restaurarBackup = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -191,57 +179,57 @@ export function BackupGlobal() {
   };
 
   return (
-    <div className="p-6 bg-zinc-950 min-h-full text-zinc-100">
-      <h2 className="text-2xl font-bold mb-6 text-red-500 uppercase tracking-wider flex items-center gap-2">
-        <ShieldCheck size={28} /> Centro de Segurança & Backup
+    <div className="p-6 bg-zinc-50 min-h-full text-zinc-900 font-sans">
+      <h2 className="text-2xl font-bold mb-6 text-orange-500 uppercase tracking-wider flex items-center gap-2">
+        <ShieldCheck size={28} /> Centro de Segurança & Backup - Vulpe Mart
       </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
-        <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-lg shadow-lg">
-          <h3 className="text-lg font-bold text-zinc-100 flex items-center gap-2 mb-4">
-            <RefreshCw className={navigator.onLine ? "text-green-500" : "text-zinc-500"} /> 
+        <div className="bg-white border border-zinc-200 p-6 rounded-lg shadow-sm">
+          <h3 className="text-lg font-bold text-zinc-800 flex items-center gap-2 mb-4">
+            <RefreshCw className={navigator.onLine ? "text-green-500" : "text-zinc-400"} /> 
             Backup Automático Encriptado
           </h3>
           
-          <p className="text-zinc-400 text-sm mb-4">
+          <p className="text-zinc-600 text-sm mb-4">
             O sistema guarda o stock e as vendas na pasta escolhida a cada 4 horas. 
             Os ficheiros ficam completamente ilegíveis fora do sistema.
           </p>
 
-          <div className="bg-zinc-950 p-3 rounded border border-zinc-800 mb-6 flex flex-col gap-1 text-sm">
-            <span>Status da Internet: {navigator.onLine ? <span className="text-green-500 font-bold">Online</span> : <span className="text-red-500 font-bold">Offline</span>}</span>
-            <span>Pasta Ligada: {pastaConfigurada ? <span className="text-green-500 font-bold">Sim</span> : <span className="text-red-500 font-bold">Não</span>}</span>
-            <span>Último Backup: <span className="font-bold text-zinc-200">{ultimoBackup ? ultimoBackup.toLocaleString('pt-MZ') : 'Nunca'}</span></span>
+          <div className="bg-zinc-50 p-3 rounded border border-zinc-200 mb-6 flex flex-col gap-1 text-sm">
+            <span>Status da Internet: {navigator.onLine ? <span className="text-green-600 font-bold">Online</span> : <span className="text-orange-600 font-bold">Offline</span>}</span>
+            <span>Pasta Ligada: {pastaConfigurada ? <span className="text-green-600 font-bold">Sim</span> : <span className="text-orange-600 font-bold">Não</span>}</span>
+            <span>Último Backup: <span className="font-bold text-zinc-800">{ultimoBackup ? ultimoBackup.toLocaleString('pt-MZ') : 'Nunca'}</span></span>
           </div>
 
           <div className="flex gap-3">
             <button 
               onClick={escolherPasta}
-              className="flex-1 bg-zinc-800 border border-zinc-700 hover:border-red-500 text-white p-3 rounded flex justify-center items-center gap-2 transition-all"
+              className="flex-1 bg-white border border-zinc-300 hover:border-orange-500 hover:text-orange-600 text-zinc-700 p-3 rounded flex justify-center items-center gap-2 transition-all"
             >
               <FolderOpen size={18} /> Mudar Pasta
             </button>
             <button 
               onClick={() => executarBackup(true)}
-              className="flex-1 bg-red-600 hover:bg-red-700 text-white p-3 rounded flex justify-center items-center gap-2 transition-all shadow-[0_0_15px_rgba(220,38,38,0.3)]"
+              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white p-3 rounded flex justify-center items-center gap-2 transition-all shadow-sm"
             >
               <Save size={18} /> Forçar Agora
             </button>
           </div>
         </div>
 
-        <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-lg shadow-lg">
-          <h3 className="text-lg font-bold text-zinc-100 flex items-center gap-2 mb-4">
+        <div className="bg-white border border-zinc-200 p-6 rounded-lg shadow-sm">
+          <h3 className="text-lg font-bold text-zinc-800 flex items-center gap-2 mb-4">
             <AlertTriangle className="text-orange-500" /> 
             Reposição do Sistema
           </h3>
           
-          <p className="text-zinc-400 text-sm mb-6">
+          <p className="text-zinc-600 text-sm mb-6">
             Carrega um ficheiro de backup (.aes) gerado por este sistema. O painel irá usar a chave secreta para o desencriptar e restaurar a base de dados.
           </p>
 
-          <label className="w-full bg-zinc-800 border border-zinc-700 hover:border-orange-500 text-white p-4 rounded flex flex-col justify-center items-center gap-2 cursor-pointer transition-all border-dashed">
+          <label className="w-full bg-zinc-50 border border-zinc-300 hover:border-orange-500 text-zinc-700 p-4 rounded flex flex-col justify-center items-center gap-2 cursor-pointer transition-all border-dashed">
             <UploadCloud size={32} className="text-orange-500" />
             <span className="font-bold">Restaurar Ficheiro Encriptado</span>
             <span className="text-xs text-zinc-500">Seleciona o ficheiro .aes (Produtos ou Vendas)</span>
@@ -253,10 +241,10 @@ export function BackupGlobal() {
 
       <div className={`mt-6 border p-4 rounded text-center text-sm font-bold font-mono transition-colors ${
         status.includes('ALERTA') || status.includes('ERRO') 
-          ? 'bg-red-950 border-red-800 text-red-500' 
+          ? 'bg-red-50 border-red-200 text-red-600' 
           : status.includes('✅')
-            ? 'bg-green-950 border-green-800 text-green-500'
-            : 'bg-zinc-950 border-zinc-800 text-zinc-400'
+            ? 'bg-green-50 border-green-200 text-green-600'
+            : 'bg-white border-zinc-200 text-zinc-600'
       }`}>
         {status}
       </div>

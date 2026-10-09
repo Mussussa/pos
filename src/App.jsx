@@ -12,17 +12,16 @@ import {
   ShoppingCart,
   LogOut,
   DatabaseBackup,
-  Users // Ícone adicionado aqui
+  Users
 } from "lucide-react";
 
-// Caminhos corrigidos para bater certo com as pastas criadas
 import { GestaoProdutos } from "./components/admin/GestaoProdutos";
 import { RelatoriosAdmin } from "./components/admin/RelatoriosAdmin";
 import { BackupGlobal } from "./components/admin/BackupGlobal";
 import { GestaoUsuarios } from "./components/admin/GestaoUsuarios";
 import { TerminalVendas } from "./components/vendedor/TerminalVendas";
-import { Login } from "./components/Login"; // Caminho corrigido
-import { AuthProvider, useAuth } from "./AuthContext"; // Caminho corrigido
+import { Login } from "./components/Login";
+import { AuthProvider, useAuth } from "./AuthContext";
 
 function Sidebar() {
   const location = useLocation();
@@ -30,19 +29,19 @@ function Sidebar() {
 
   const linkAtivo = (caminho) =>
     location.pathname === caminho
-      ? "bg-zinc-900 text-red-500 border-r-4 border-red-600 shadow-[inset_0px_0px_15px_rgba(220,38,38,0.05)]"
-      : "text-zinc-400 hover:bg-zinc-900/50 hover:text-red-400";
+      ? "bg-zinc-900 text-orange-500 border-r-4 border-orange-600 shadow-[inset_0px_0px_15px_rgba(249,115,22,0.05)]"
+      : "text-zinc-400 hover:bg-zinc-900/50 hover:text-orange-400";
 
   return (
     <div className="w-64 min-h-screen bg-zinc-950 p-4 flex flex-col border-r border-zinc-800 print:hidden">
       <div className="mb-8 p-2 border-b border-zinc-800 pb-6 flex flex-col items-center text-center">
         <img
-          src="/logo_misto.jpeg"
-          alt="Auto Center Logótipo"
-          className="w-32 h-auto mb-4 rounded-xl shadow-[0_0_20px_rgba(220,38,38,0.15)] border border-zinc-800"
+          src="/logo_vulpe_instinct.png"
+          alt="Vulpe Mart Logótipo"
+          className="w-32 h-auto mb-4 rounded-xl shadow-[0_0_20px_rgba(249,115,22,0.15)] border border-zinc-800"
         />
         <h1 className="text-xl font-bold text-zinc-100 tracking-wider">
-          AUTO <span className="text-red-600">CENTER</span>
+          VULPE <span className="text-orange-500">MART</span>
         </h1>
         <p className="text-xs text-zinc-500 uppercase tracking-widest mt-1">
           Operador:{" "}
@@ -89,7 +88,7 @@ function Sidebar() {
 
       <button
         onClick={logout}
-        className="flex items-center gap-3 p-3 text-zinc-500 hover:bg-red-950/30 hover:text-red-500 rounded-lg transition-colors mt-auto font-medium"
+        className="flex items-center gap-3 p-3 text-zinc-500 hover:bg-orange-950/30 hover:text-orange-500 rounded-lg transition-colors mt-auto font-medium"
       >
         <LogOut size={20} /> Sair do Sistema
       </button>
@@ -97,7 +96,6 @@ function Sidebar() {
   );
 }
 
-// Guarda Costas para bloquear URLs escritas à mão
 function RotaProtegida({ children, apenasAdmin = false }) {
   const { user } = useAuth();
   if (apenasAdmin && user.role !== "admin") {
@@ -109,7 +107,6 @@ function RotaProtegida({ children, apenasAdmin = false }) {
 function SistemaPrincipal() {
   const { user } = useAuth();
 
-  // Se não houver sessão ativa, a loja desaparece e só o login é renderizado
   if (!user) return <Login />;
 
   return (
@@ -152,7 +149,6 @@ function SistemaPrincipal() {
             }
           />
 
-          {/* Se a pessoa tentar um URL que não existe, empurra para a página inicial certa */}
           <Route
             path="*"
             element={<Navigate to={user.role === "admin" ? "/" : "/pos"} />}
