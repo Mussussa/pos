@@ -9,7 +9,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["logo_misto.jpeg"], 
+      includeAssets: ["logo_vulpe_instinct.png"], 
       manifest: {
         name: "Auto Center Gestão e POS",
         short_name: "AutoCenter",

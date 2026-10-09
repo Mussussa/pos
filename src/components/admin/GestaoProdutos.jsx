@@ -8,15 +8,14 @@ export function GestaoProdutos() {
   const [erro, setErro] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("todas");
 
-  // Estados controlados para o formulário (necessário para a edição funcionar bem)
   const [produtoEmEdicao, setProdutoEmEdicao] = useState(null);
   const [nome, setNome] = useState("");
-  const [categoria, setCategoria] = useState("peca");
+  const [categoria, setCategoria] = useState("alimentacao");
   const [precoCusto, setPrecoCusto] = useState("");
   const [precoVenda, setPrecoVenda] = useState("");
   const [stock, setStock] = useState("");
+  const [unidadeMedida, setUnidadeMedida] = useState("unidade"); // Novo campo adicionado
 
-  // Preenche o formulário com os dados do produto escolhido
   const iniciarEdicao = (produto) => {
     setErro("");
     setProdutoEmEdicao(produto.id);
@@ -25,21 +24,21 @@ export function GestaoProdutos() {
     setPrecoCusto(produto.precoCusto);
     setPrecoVenda(produto.precoVenda);
     setStock(produto.stock);
-    window.scrollTo({ top: 0, behavior: 'smooth' }); // Sobe a página para o formulário
+    setUnidadeMedida(produto.unidadeMedida || "unidade");
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Limpa o formulário e sai do modo de edição
   const cancelarEdicao = () => {
     setProdutoEmEdicao(null);
     setNome("");
-    setCategoria("peca");
+    setCategoria("alimentacao");
     setPrecoCusto("");
     setPrecoVenda("");
     setStock("");
+    setUnidadeMedida("unidade");
     setErro("");
   };
 
-  // Função única que decide se vai Adicionar ou Atualizar
   const guardarProduto = async (e) => {
     e.preventDefault();
     setErro("");
@@ -55,38 +54,35 @@ export function GestaoProdutos() {
 
     try {
       if (produtoEmEdicao) {
-        // ATUALIZA O PRODUTO EXISTENTE
         await db.produtos.update(produtoEmEdicao, {
           nome: pNome,
           categoria,
           precoVenda: pVenda,
           precoCusto: pCusto,
-          stock: pStock
-          // Não atualizamos a dataCriacao para manter o registo original
+          stock: pStock,
+          unidadeMedida // Atualiza a unidade de medida
         });
       } else {
-        // CRIA UM PRODUTO NOVO
         await db.produtos.add({ 
           nome: pNome, 
           categoria, 
           precoVenda: pVenda, 
           precoCusto: pCusto, 
           stock: pStock, 
-          dataCriacao: new Date().toISOString() 
+          unidadeMedida // Grava a unidade de medida
         });
       }
-      cancelarEdicao(); // Limpa os campos depois de gravar
+      cancelarEdicao();
     } catch (err) {
       setErro("Erro ao guardar o produto. Verifica os dados.");
     }
   };
 
-  // Função para apagar definitivamente
   const apagarProduto = async (id) => {
     const confirmar = window.confirm("Tens a certeza que queres apagar este artigo? Esta ação não pode ser desfeita.");
     if (confirmar) {
       await db.produtos.delete(id);
-      if (produtoEmEdicao === id) cancelarEdicao(); // Se estava a ser editado, limpa o formulário
+      if (produtoEmEdicao === id) cancelarEdicao();
     }
   };
 
@@ -95,22 +91,22 @@ export function GestaoProdutos() {
   );
 
   return (
-    <div className="p-6 bg-zinc-950 min-h-full text-zinc-100">
-      <h2 className="text-2xl font-bold mb-6 text-red-500 uppercase tracking-wider">
-        {produtoEmEdicao ? "Editar Stock" : "Entrada de Stock"}
+    <div className="p-6 bg-white min-h-full text-zinc-900 font-sans">
+      <h2 className="text-2xl font-bold mb-6 text-orange-500 uppercase tracking-wider">
+        {produtoEmEdicao ? "Editar Stock" : "Entrada de Stock"} Vulpe Mart
       </h2>
 
       {erro && (
-        <div className="bg-red-950 border border-red-700 text-red-200 p-3 mb-6 rounded shadow-lg">
+        <div className="bg-orange-50 border border-orange-500 text-orange-700 p-3 mb-6 rounded shadow-sm">
           {erro}
         </div>
       )}
 
-      {/* Formulário Controlado */}
+      {/* Formulário Controlado (Tema Claro e Laranja Vulpe) */}
       <form
         onSubmit={guardarProduto}
-        className={`grid grid-cols-1 md:grid-cols-2 gap-4 p-6 rounded-lg shadow-xl border transition-colors ${
-          produtoEmEdicao ? "bg-zinc-900 border-blue-900 shadow-[0_0_20px_rgba(30,58,138,0.2)]" : "bg-zinc-900 border-zinc-800"
+        className={`grid grid-cols-1 md:grid-cols-2 gap-4 p-6 rounded-lg shadow-sm border transition-colors ${
+          produtoEmEdicao ? "bg-white border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.1)]" : "bg-white border-zinc-200"
         }`}
       >
         <input
@@ -119,18 +115,19 @@ export function GestaoProdutos() {
           required
           value={nome}
           onChange={(e) => setNome(e.target.value)}
-          className="bg-zinc-950 border border-zinc-700 text-zinc-100 placeholder-zinc-500 p-3 rounded focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+          className="bg-white border border-zinc-300 text-zinc-900 placeholder-zinc-400 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
         />
 
         <select
           required
           value={categoria}
           onChange={(e) => setCategoria(e.target.value)}
-          className="bg-zinc-950 border border-zinc-700 text-zinc-100 p-3 rounded focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+          className="bg-white border border-zinc-300 text-zinc-900 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
         >
-          <option value="peca">Peça de Mota</option>
-          <option value="chinelo">Chinelo</option>
-          <option value="mexa">Mexa</option>
+          <option value="alimentacao">Alimentação</option>
+          <option value="bebidas">Bebidas</option>
+          <option value="limpeza">Limpeza</option>
+          <option value="diversos">Diversos</option>
         </select>
 
         <input
@@ -140,7 +137,7 @@ export function GestaoProdutos() {
           required
           value={precoCusto}
           onChange={(e) => setPrecoCusto(e.target.value)}
-          className="bg-zinc-950 border border-zinc-700 text-zinc-100 placeholder-zinc-500 p-3 rounded focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+          className="bg-white border border-zinc-300 text-zinc-900 placeholder-zinc-400 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
         />
         <input
           type="number"
@@ -149,24 +146,38 @@ export function GestaoProdutos() {
           required
           value={precoVenda}
           onChange={(e) => setPrecoVenda(e.target.value)}
-          className="bg-zinc-950 border border-zinc-700 text-zinc-100 placeholder-zinc-500 p-3 rounded focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+          className="bg-white border border-zinc-300 text-zinc-900 placeholder-zinc-400 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
         />
-        <input
-          type="number"
-          placeholder="Quantidade em Stock"
-          required
-          value={stock}
-          onChange={(e) => setStock(e.target.value)}
-          className="bg-zinc-950 border border-zinc-700 text-zinc-100 placeholder-zinc-500 p-3 rounded md:col-span-2 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
-        />
+        
+        <div className="md:col-span-2 flex gap-2">
+          <input
+            type="number"
+            placeholder="Quantidade em Stock"
+            required
+            value={stock}
+            onChange={(e) => setStock(e.target.value)}
+            className="flex-1 bg-white border border-zinc-300 text-zinc-900 placeholder-zinc-400 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+          />
+          <select
+            required
+            value={unidadeMedida}
+            onChange={(e) => setUnidadeMedida(e.target.value)}
+            className="w-1/3 md:w-1/4 bg-white border border-zinc-300 text-zinc-900 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+          >
+            <option value="unidade">Un.</option>
+            <option value="kg">Kg</option>
+            <option value="litro">Litro</option>
+            <option value="caixa">Caixa</option>
+          </select>
+        </div>
 
         <div className="md:col-span-2 flex gap-4 mt-2">
           <button
             type="submit"
-            className={`flex-1 font-bold py-3 px-4 rounded transition-colors ${
+            className={`flex-1 font-bold py-3 px-4 rounded transition-colors shadow-sm ${
               produtoEmEdicao 
-                ? "bg-blue-600 hover:bg-blue-700 text-white shadow-[0_0_15px_rgba(37,99,235,0.3)]" 
-                : "bg-red-600 hover:bg-red-700 text-white shadow-[0_0_15px_rgba(220,38,38,0.3)]"
+                ? "bg-zinc-800 hover:bg-zinc-900 text-white" 
+                : "bg-orange-500 hover:bg-orange-600 text-white"
             }`}
           >
             {produtoEmEdicao ? "Atualizar Produto" : "Guardar Produto"}
@@ -176,7 +187,7 @@ export function GestaoProdutos() {
             <button
               type="button"
               onClick={cancelarEdicao}
-              className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold py-3 px-4 rounded flex items-center gap-2 transition-colors border border-zinc-700"
+              className="bg-white hover:bg-zinc-50 text-zinc-700 font-bold py-3 px-4 rounded flex items-center gap-2 transition-colors border border-zinc-300"
             >
               <X size={20} /> Cancelar
             </button>
@@ -187,9 +198,9 @@ export function GestaoProdutos() {
       {/* Tabela de Produtos com Filtro */}
       <div className="mt-10">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
-          <h3 className="text-xl font-bold text-zinc-300">
+          <h3 className="text-xl font-bold text-zinc-800">
             Stock Atual{" "}
-            <span className="text-red-500">
+            <span className="text-orange-500">
               ({produtosFiltrados?.length || 0})
             </span>
           </h3>
@@ -197,12 +208,13 @@ export function GestaoProdutos() {
           <select
             value={filtroCategoria}
             onChange={(e) => setFiltroCategoria(e.target.value)}
-            className="bg-zinc-900 border border-zinc-700 text-zinc-300 p-2 rounded focus:outline-none focus:border-red-500"
+            className="bg-white border border-zinc-300 text-zinc-900 p-2 rounded focus:outline-none focus:border-orange-500"
           >
             <option value="todas">Todas as Categorias</option>
-            <option value="peca">Peças de Mota</option>
-            <option value="chinelo">Chinelos</option>
-            <option value="mexa">Mexas</option>
+            <option value="alimentacao">Alimentação</option>
+            <option value="bebidas">Bebidas</option>
+            <option value="limpeza">Limpeza</option>
+            <option value="diversos">Diversos</option>
           </select>
         </div>
 
@@ -210,47 +222,40 @@ export function GestaoProdutos() {
           {produtosFiltrados?.map((p) => (
             <li
               key={p.id}
-              className="bg-zinc-900 border border-zinc-800 p-4 flex flex-col md:flex-row justify-between rounded-lg shadow-sm items-start md:items-center gap-2 hover:border-zinc-700 transition-colors"
+              className="bg-white border border-zinc-200 p-4 flex flex-col md:flex-row justify-between rounded-lg shadow-sm items-start md:items-center gap-2 hover:border-orange-300 transition-colors"
             >
               <div className="flex items-center gap-3">
-                <span className="font-bold text-zinc-100 text-lg">
+                <span className="font-bold text-zinc-900 text-lg">
                   {p.nome}
                 </span>
-                <span className="text-xs font-semibold uppercase bg-zinc-950 text-red-500 border border-red-900/50 px-2 py-1 rounded">
+                <span className="text-xs font-semibold uppercase bg-orange-50 text-orange-600 border border-orange-200 px-2 py-1 rounded">
                   {p.categoria}
-                </span>
-                <span className="text-xs text-zinc-500 hidden md:block">
-                  Adicionado em:{" "}
-                  {p.dataCriacao
-                    ? new Date(p.dataCriacao).toLocaleString("pt-MZ")
-                    : "Data não registada"}
                 </span>
               </div>
               
-              <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end mt-4 md:mt-0 border-t border-zinc-800 pt-4 md:border-0 md:pt-0">
+              <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end mt-4 md:mt-0 border-t border-zinc-100 pt-4 md:border-0 md:pt-0">
                 <div className="text-right flex items-center gap-4">
                   <span
-                    className={`font-bold ${p.stock < 5 ? "text-red-500 animate-pulse" : "text-zinc-400"}`}
+                    className={`font-bold ${p.stock < 5 ? "text-orange-600 animate-pulse" : "text-zinc-600"}`}
                   >
-                    Stock: {p.stock}
+                    Stock: {p.stock} {p.unidadeMedida}
                   </span>
-                  <span className="text-zinc-200 font-medium">
+                  <span className="text-zinc-800 font-medium">
                     Venda: {p.precoVenda.toFixed(2)} MT
                   </span>
                 </div>
 
-                {/* Botões de Ação (Editar e Apagar) */}
                 <div className="flex items-center gap-2 ml-4">
                   <button 
                     onClick={() => iniciarEdicao(p)}
-                    className="p-2 bg-zinc-950 border border-zinc-800 hover:border-blue-500 hover:text-blue-500 text-zinc-400 rounded transition-colors"
+                    className="p-2 bg-white border border-zinc-300 hover:border-orange-500 hover:text-orange-500 text-zinc-500 rounded transition-colors"
                     title="Editar Produto"
                   >
                     <Edit size={18} />
                   </button>
                   <button 
                     onClick={() => apagarProduto(p.id)}
-                    className="p-2 bg-zinc-950 border border-zinc-800 hover:border-red-500 hover:text-red-500 text-zinc-400 rounded transition-colors"
+                    className="p-2 bg-white border border-zinc-300 hover:border-red-500 hover:text-red-500 text-zinc-500 rounded transition-colors"
                     title="Apagar Produto"
                   >
                     <Trash2 size={18} />
@@ -261,7 +266,7 @@ export function GestaoProdutos() {
           ))}
 
           {produtosFiltrados?.length === 0 && (
-            <div className="text-center p-8 border border-zinc-800 border-dashed rounded-lg bg-zinc-900/50 text-zinc-500">
+            <div className="text-center p-8 border border-zinc-300 border-dashed rounded-lg bg-zinc-50 text-zinc-500">
               Nenhum produto encontrado nesta categoria.
             </div>
           )}
