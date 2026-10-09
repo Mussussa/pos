@@ -22,6 +22,7 @@ import { GestaoUsuarios } from "./components/admin/GestaoUsuarios";
 import { TerminalVendas } from "./components/vendedor/TerminalVendas";
 import { Login } from "./components/Login";
 import { AuthProvider, useAuth } from "./AuthContext";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 function Sidebar() {
   const location = useLocation();
@@ -33,7 +34,8 @@ function Sidebar() {
       : "text-zinc-400 hover:bg-zinc-900/50 hover:text-orange-400";
 
   return (
-    <div className="w-64 min-h-screen bg-zinc-950 p-4 flex flex-col border-r border-zinc-800 print:hidden">
+    // Transformado em <aside> fixo com 'sticky top-0 h-screen shrink-0'
+    <aside className="w-64 h-screen sticky top-0 bg-zinc-950 p-4 flex flex-col border-r border-zinc-800 print:hidden shrink-0">
       <div className="mb-8 p-2 border-b border-zinc-800 pb-6 flex flex-col items-center text-center">
         <img
           src="/logo_vulpe_instinct.png"
@@ -49,7 +51,7 @@ function Sidebar() {
         </p>
       </div>
 
-      <nav className="flex-1 space-y-2">
+      <nav className="flex-1 space-y-2 overflow-y-auto pr-1 custom-scrollbar">
         {user.role === "admin" && (
           <>
             <Link
@@ -88,11 +90,11 @@ function Sidebar() {
 
       <button
         onClick={logout}
-        className="flex items-center gap-3 p-3 text-zinc-500 hover:bg-orange-950/30 hover:text-orange-500 rounded-lg transition-colors mt-auto font-medium"
+        className="flex items-center gap-3 p-3 text-zinc-500 hover:bg-orange-950/30 hover:text-orange-500 rounded-lg transition-colors mt-auto font-medium pt-4 border-t border-zinc-900"
       >
         <LogOut size={20} /> Sair do Sistema
       </button>
-    </div>
+    </aside>
   );
 }
 
@@ -110,9 +112,10 @@ function SistemaPrincipal() {
   if (!user) return <Login />;
 
   return (
-    <div className="flex bg-zinc-950 print:bg-white min-h-screen font-sans text-zinc-100">
+    // Layout ajustado para conter a altura total do ecrã e rolar apenas o <main>
+    <div className="flex h-screen overflow-hidden bg-zinc-950 print:bg-white font-sans text-zinc-100">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto print:overflow-visible">
+      <main className="flex-1 h-screen overflow-y-auto print:overflow-visible">
         <Routes>
           <Route path="/pos" element={<TerminalVendas />} />
 
@@ -161,10 +164,12 @@ function SistemaPrincipal() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <SistemaPrincipal />
-      </Router>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <Router>
+          <SistemaPrincipal />
+        </Router>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
