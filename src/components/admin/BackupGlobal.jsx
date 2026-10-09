@@ -71,9 +71,21 @@ export function BackupGlobal() {
     return new TextDecoder().decode(bufferAberto);
   };
 
+  const verificarPermissaoHandle = async (handle, comInteracao) => {
+    if ((await handle.queryPermission({ mode: 'readwrite' })) === 'granted') {
+      return true;
+    }
+    if (comInteracao) {
+      if ((await handle.requestPermission({ mode: 'readwrite' })) === 'granted') {
+        return true;
+      }
+    }
+    return false;
+  };
+
   const executarBackup = async (forcarManual = false) => {
     try {
-      setStatus('A gerar ficheiros encriptados...');
+      setStatus('A iniciar processo de backup...');
       const config = await db.sistema.get('config_backup');
       
       if (!config?.diretorioHandle) {
@@ -82,11 +94,14 @@ export function BackupGlobal() {
       }
 
       const handle = config.diretorioHandle;
-      if ((await handle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
-        if ((await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') {
-          throw new Error('Sem permissão para escrever na pasta.');
-        }
+      const temPermissao = await verificarPermissaoHandle(handle, forcarManual);
+
+      if (!temPermissao) {
+        setStatus('⚠️ O navegador bloqueou o acesso à pasta. Clica em "Forçar Agora" para autorizar.');
+        return false;
       }
+
+      setStatus('A gerar ficheiros encriptados...');
 
       const produtosBrutos = await db.produtos.toArray();
       const vendasBrutas = await db.vendas.toArray();
@@ -119,18 +134,17 @@ export function BackupGlobal() {
 
       await db.sistema.update('config_backup', { ultimaData: dataAtual.toISOString() });
       setUltimoBackup(dataAtual);
-      setStatus(`Backup ${forcarManual ? 'manual' : 'automático'} encriptado e guardado com sucesso!`);
+      setStatus(`✅ Backup ${forcarManual ? 'manual' : 'automático'} encriptado e guardado com sucesso!`);
       return true;
 
     } catch (err) {
       console.error(err);
-      setStatus('Erro ao guardar os ficheiros na pasta.');
+      setStatus('Erro ao guardar os ficheiros na pasta. Verifica o espaço em disco.');
       return false;
     }
   };
 
   const verificarBackupAutomatico = async () => {
-    if (!navigator.onLine) return; 
     const config = await db.sistema.get('config_backup');
     if (!config?.ultimaData || !config?.diretorioHandle) return;
 
@@ -240,7 +254,7 @@ export function BackupGlobal() {
       </div>
 
       <div className={`mt-6 border p-4 rounded text-center text-sm font-bold font-mono transition-colors ${
-        status.includes('ALERTA') || status.includes('ERRO') 
+        status.includes('ALERTA') || status.includes('⚠️') || status.includes('Erro')
           ? 'bg-red-50 border-red-200 text-red-600' 
           : status.includes('✅')
             ? 'bg-green-50 border-green-200 text-green-600'
