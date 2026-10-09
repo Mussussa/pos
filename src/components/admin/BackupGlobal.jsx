@@ -157,7 +157,7 @@ export function BackupGlobal() {
     }
   };
 
-  const restaurarBackup = async (e) => {
+const restaurarBackup = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -174,18 +174,38 @@ export function BackupGlobal() {
         dynamicTyping: true,
         complete: async (results) => {
           try {
+            // BLINDAGEM: Se formos restaurar vendas, garantimos que o campo 'itens' é sempre um Array
+            let dadosProcessados = results.data;
+            if (file.name.includes('vendas')) {
+              dadosProcessados = results.data.map(venda => {
+                if (venda.itens && typeof venda.itens === 'string') {
+                  try {
+                    venda.itens = JSON.parse(venda.itens);
+                  } catch (err) {
+                    venda.itens = [];
+                  }
+                }
+                if (!Array.isArray(venda.itens)) {
+                  venda.itens = [];
+                }
+                return venda;
+              });
+            }
+
             await db.transaction('rw', tabelaDestino, async () => {
               await tabelaDestino.clear();
-              await tabelaDestino.bulkAdd(results.data);
+              await tabelaDestino.bulkAdd(dadosProcessados);
             });
             setStatus(`✅ Dados de ${tabelaDestino.name} desencriptados e restaurados com sucesso!`);
           } catch (err) {
+            console.error(err);
             setStatus('Erro ao escrever na base de dados.');
           }
         }
       });
 
     } catch (err) {
+      console.error(err);
       setStatus('🚨 ALERTA: Ficheiro inválido, corrompido ou chave secreta incorreta.');
     }
     
