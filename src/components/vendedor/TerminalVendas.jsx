@@ -1,16 +1,35 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { db } from '../../db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ShoppingCart, Printer, Trash2, Plus, Minus } from 'lucide-react';
+import { ShoppingCart, Check, Trash2, Plus, Minus, History, X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export function TerminalVendas() {
   const produtos = useLiveQuery(() => db.produtos.where('stock').above(0).toArray());
+  const vendas = useLiveQuery(() => db.vendas.toArray());
+
   const [filtroCategoria, setFiltroCategoria] = useState('todas');
   const [carrinho, setCarrinho] = useState([]);
+
+  // Estados para o Histórico de Vendas
+  const [mostrarHistorico, setMostrarHistorico] = useState(false);
+  const [paginaHistorico, setPaginaHistorico] = useState(1);
+  const itensPorPaginaHistorico = 15;
 
   const produtosVitrine = produtos?.filter(p => 
     filtroCategoria === 'todas' ? true : p.categoria === filtroCategoria
   );
+
+  // Lógica do Histórico Paginado
+  const vendasOrdenadas = useMemo(() => {
+    if (!vendas) return [];
+    return [...vendas].sort((a, b) => new Date(b.data) - new Date(a.data));
+  }, [vendas]);
+
+  const totalPaginasHistorico = Math.ceil(vendasOrdenadas.length / itensPorPaginaHistorico);
+  const historicoPaginado = useMemo(() => {
+    const inicio = (paginaHistorico - 1) * itensPorPaginaHistorico;
+    return vendasOrdenadas.slice(inicio, inicio + itensPorPaginaHistorico);
+  }, [vendasOrdenadas, paginaHistorico]);
 
   const adicionarAoCarrinho = (produto) => {
     setCarrinho(prev => {
@@ -60,7 +79,7 @@ export function TerminalVendas() {
     };
 
     try {
-      // 1. Grava na base de dados e abate o stock
+      // Grava na base de dados e abate o stock
       await db.transaction('rw', db.produtos, db.vendas, async () => {
         await db.vendas.add(novaVenda);
         for (const item of carrinho) {
@@ -69,11 +88,9 @@ export function TerminalVendas() {
         }
       });
 
-      // 2. Dispara a impressão imediatamente (O navegador congela a tela enquanto o diálogo de impressão está aberto)
-      window.print();
-
-      // 3. Só limpa o carrinho depois da impressão ser concluída/cancelada
+      // Limpa o carrinho e avisa do sucesso, sem imprimir
       setCarrinho([]);
+      alert("Venda registada com sucesso!");
 
     } catch (error) {
       alert("Erro ao processar a venda.");
@@ -84,24 +101,108 @@ export function TerminalVendas() {
   return (
     <div className="flex flex-col md:flex-row h-full min-h-screen bg-zinc-950 text-zinc-100 relative">
       
-      {/* ---------------------------------------------------- */}
-      {/* INTERFACE DA LOJA (Oculta na impressão: print:hidden) */}
-      {/* ---------------------------------------------------- */}
-      
+      {/* ========================================= */}
+      {/* MODAL DE HISTÓRICO DE VENDAS */}
+      {/* ========================================= */}
+      {mostrarHistorico && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex justify-between items-center p-6 border-b border-zinc-800 bg-zinc-900">
+              <h2 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
+                <History className="text-red-500" /> Histórico de Vendas Diário
+              </h2>
+              <button onClick={() => setMostrarHistorico(false)} className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 rounded-lg transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-auto p-6">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-zinc-900 text-zinc-400 sticky top-0 shadow-sm text-sm">
+                  <tr>
+                    <th className="p-4 font-semibold rounded-tl-lg">Data e Hora</th>
+                    <th className="p-4 font-semibold">Artigos Faturados</th>
+                    <th className="p-4 font-semibold text-right rounded-tr-lg">Valor Cobrado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800 text-sm">
+                  {historicoPaginado.map(v => (
+                    <tr key={v.id} className="hover:bg-zinc-900/50 transition-colors">
+                      <td className="p-4 text-zinc-300 whitespace-nowrap">
+                        {new Date(v.data).toLocaleString('pt-MZ', { 
+                          day: '2-digit', month: '2-digit', year: 'numeric', 
+                          hour: '2-digit', minute: '2-digit'
+                        })}
+                      </td>
+                      <td className="p-4 text-zinc-400">
+                        <ul className="list-disc list-inside">
+                          {v.itens?.map((i, idx) => (
+                            <li key={idx}>{i.quantidade}x {i.nome}</li>
+                          ))}
+                        </ul>
+                      </td>
+                      <td className="p-4 font-bold text-red-500 text-right">{v.totalVenda.toFixed(2)} MT</td>
+                    </tr>
+                  ))}
+                  {historicoPaginado.length === 0 && (
+                    <tr>
+                      <td colSpan="3" className="p-8 text-center text-zinc-500">Sem histórico de vendas.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {totalPaginasHistorico > 1 && (
+              <div className="flex justify-between items-center p-4 border-t border-zinc-800 bg-zinc-900">
+                <span className="text-sm text-zinc-500">
+                  Página {paginaHistorico} de {totalPaginasHistorico} ({vendasOrdenadas.length} registos totais)
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPaginaHistorico(prev => Math.max(prev - 1, 1))}
+                    disabled={paginaHistorico === 1}
+                    className="p-2 border border-zinc-700 bg-zinc-950 rounded text-zinc-400 hover:border-red-500 hover:text-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                  <button
+                    onClick={() => setPaginaHistorico(prev => Math.min(prev + 1, totalPaginasHistorico))}
+                    disabled={paginaHistorico === totalPaginasHistorico}
+                    className="p-2 border border-zinc-700 bg-zinc-950 rounded text-zinc-400 hover:border-red-500 hover:text-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronRight size={20} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Esquerda: Lista de Produtos */}
-      <div className="w-full md:w-2/3 p-6 flex flex-col h-full border-r border-zinc-800 print:hidden">
+      <div className="w-full md:w-2/3 p-6 flex flex-col h-full border-r border-zinc-800">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-red-500 uppercase tracking-wider">Terminal POS</h2>
-          <select 
-            value={filtroCategoria} 
-            onChange={(e) => setFiltroCategoria(e.target.value)}
-            className="bg-zinc-900 border border-zinc-700 text-zinc-300 p-2 rounded focus:border-red-500 outline-none"
-          >
-            <option value="todas">Todas as Categorias</option>
-            <option value="peca">Peças de Mota</option>
-            <option value="chinelo">Chinelos</option>
-            <option value="mexa">Mexas</option>
-          </select>
+          
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setMostrarHistorico(true)}
+              className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-bold py-2 px-4 rounded border border-zinc-700 transition-colors"
+            >
+              <History size={18} /> Histórico
+            </button>
+            <select 
+              value={filtroCategoria} 
+              onChange={(e) => setFiltroCategoria(e.target.value)}
+              className="bg-zinc-900 border border-zinc-700 text-zinc-300 p-2 rounded focus:border-red-500 outline-none"
+            >
+              <option value="todas">Todas as Categorias</option>
+              <option value="peca">Peças de Mota</option>
+              <option value="chinelo">Chinelos</option>
+              <option value="mexa">Mexas</option>
+            </select>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto pr-2">
@@ -125,7 +226,7 @@ export function TerminalVendas() {
       </div>
 
       {/* Direita: Carrinho */}
-      <div className="w-full md:w-1/3 bg-zinc-900 p-6 flex flex-col h-full shadow-2xl z-10 print:hidden">
+      <div className="w-full md:w-1/3 bg-zinc-900 p-6 flex flex-col h-full shadow-2xl z-10">
         <h3 className="text-xl font-bold text-zinc-100 mb-6 flex items-center gap-2">
           <ShoppingCart className="text-red-500" /> Carrinho Atual
         </h3>
@@ -162,54 +263,8 @@ export function TerminalVendas() {
             disabled={carrinho.length === 0}
             className="w-full bg-red-600 text-white font-bold py-4 rounded-lg flex justify-center items-center gap-2 hover:bg-red-700 disabled:opacity-50 transition-colors text-lg"
           >
-            <Printer /> Finalizar e Imprimir
+            <Check size={20} /> Finalizar Venda
           </button>
-        </div>
-      </div>
-
-      {/* ---------------------------------------------------- */}
-      {/* RECIBO TÉRMICO (Mostra SÓ na impressão: hidden print:block) */}
-      {/* ---------------------------------------------------- */}
-      <div className="hidden print:block absolute top-0 left-0 bg-white text-black p-4 font-mono w-[80mm] text-sm mx-auto">
-        <div className="text-center">
-          <h2 className="font-bold text-xl uppercase mb-1">AUTO CENTER</h2>
-          <h3 className="font-bold text-l uppercase mb-1">MOTO PEÇAS</h3>
-          <p className="text-xs mb-4">Nuit 107917683. Contacto. 845773342.  MERCEARIA MISTO.</p>
-          
-          <p className="text-xs text-left mb-4">
-            Data: {new Date().toLocaleString('pt-MZ')}<br/>
-            Op: Vendedor #1
-          </p>
-
-          <div className="border-t border-black border-dashed my-2"></div>
-          
-          <table className="w-full text-left text-xs mb-2">
-            <thead>
-              <tr>
-                <th className="pb-1 w-8">Qtd</th>
-                <th className="pb-1">Artigo</th>
-                <th className="pb-1 text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {carrinho.map((item, idx) => (
-                <tr key={idx}>
-                  <td className="align-top font-bold">{item.quantidade}x</td>
-                  <td className="align-top pr-1">{item.nome}</td>
-                  <td className="align-top text-right">{(item.precoVenda * item.quantidade).toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div className="border-t border-black border-dashed my-2"></div>
-          
-          <div className="flex justify-between font-bold text-base mb-4 mt-2">
-            <span>TOTAL MT:</span>
-            <span>{totalVenda.toFixed(2)}</span>
-          </div>
-
-          <p className="text-xs text-center mt-8">Obrigado pela preferência!</p>
         </div>
       </div>
 
