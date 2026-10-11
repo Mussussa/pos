@@ -9,6 +9,9 @@ export function AuthProvider({ children }) {
   const [needsSetup, setNeedsSetup] = useState(true);
   const [loading, setLoading] = useState(true);
 
+  // 2 horas em milissegundos
+  const TEMPO_EXPIRACAO_SESSAO = 2 * 60 * 60 * 1000;
+
   useEffect(() => {
     verificarSistema();
   }, []);
@@ -18,10 +21,20 @@ export function AuthProvider({ children }) {
     const adminExist = await db.usuarios.where('role').equals('admin').first();
     setNeedsSetup(!adminExist);
 
-    // Verifica se o navegador já tem uma sessão guardada do último login
+    // Verifica se o navegador já tem uma sessão guardada
     const sessaoGuardada = localStorage.getItem('loja_session');
+    
     if (sessaoGuardada) {
-      setUser(JSON.parse(sessaoGuardada));
+      const dadosSessao = JSON.parse(sessaoGuardada);
+      const tempoDecorrido = Date.now() - dadosSessao.timestamp;
+
+      // Se passou o tempo limite, destrói a sessão
+      if (tempoDecorrido >= TEMPO_EXPIRACAO_SESSAO) {
+        localStorage.removeItem('loja_session');
+        setUser(null);
+      } else {
+        setUser(dadosSessao);
+      }
     }
     setLoading(false);
   };
@@ -44,7 +57,14 @@ export function AuthProvider({ children }) {
     const senhaValida = bcrypt.compareSync(password, dbUser.passwordHash);
     if (!senhaValida) throw new Error('Senha incorreta.');
 
-    const sessao = { id: dbUser.id, username: dbUser.username, role: dbUser.role };
+    // Adiciona o timestamp exato do momento do login
+    const sessao = { 
+      id: dbUser.id, 
+      username: dbUser.username, 
+      role: dbUser.role,
+      timestamp: Date.now()
+    };
+    
     localStorage.setItem('loja_session', JSON.stringify(sessao));
     setUser(sessao);
   };
