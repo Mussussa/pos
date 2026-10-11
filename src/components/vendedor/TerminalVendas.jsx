@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react';
 import { db } from '../../db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ShoppingCart, Printer, Trash2, Plus, Minus, Search } from 'lucide-react';
+import { ShoppingCart, Printer, Trash2, Plus, Minus, Search, History, X, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 export function TerminalVendas() {
   const produtos = useLiveQuery(() => db.produtos.where('stock').above(0).toArray());
@@ -10,6 +12,11 @@ export function TerminalVendas() {
   const [filtroCategoria, setFiltroCategoria] = useState('todas');
   const [pesquisa, setPesquisa] = useState('');
   const [carrinho, setCarrinho] = useState([]);
+  
+  // Estados para o Histórico de Vendas
+  const [mostrarHistorico, setMostrarHistorico] = useState(false);
+  const [paginaHistorico, setPaginaHistorico] = useState(1);
+  const itensPorPaginaHistorico = 15;
 
   const categorias = [
     { id: 'todas', label: 'Todas' },
@@ -19,11 +26,10 @@ export function TerminalVendas() {
     { id: 'diversos', label: 'Diversos' }
   ];
 
-// 1. Calcula a contagem de vendas (Memoizado para não recalcular a cada render)
+  // 1. Contagem de Vendas
   const contagemVendas = useMemo(() => {
     const contagem = {};
     vendas?.forEach(v => {
-      // PROTEÇÃO: Verifica se 'v.itens' existe E se é realmente um Array antes de fazer o forEach
       if (v.itens && Array.isArray(v.itens)) {
         v.itens.forEach(item => {
           contagem[item.produtoId] = (contagem[item.produtoId] || 0) + item.quantidade;
@@ -33,24 +39,18 @@ export function TerminalVendas() {
     return contagem;
   }, [vendas]);
 
+  // 2. Vitrine e Filtros
   const produtosVitrine = useMemo(() => {
     if (!produtos) return [];
-
     let filtrados = produtos;
-
-    if (filtroCategoria !== 'todas') {
-      filtrados = filtrados.filter(p => p.categoria === filtroCategoria);
-    }
-
+    if (filtroCategoria !== 'todas') filtrados = filtrados.filter(p => p.categoria === filtroCategoria);
     if (pesquisa.trim() !== '') {
       const termo = pesquisa.toLowerCase().trim();
       filtrados = filtrados.filter(p => p.nome.toLowerCase().includes(termo));
     }
-
     return filtrados.sort((a, b) => {
       const qtdA = contagemVendas[a.id] || 0;
       const qtdB = contagemVendas[b.id] || 0;
-      
       if (qtdB !== qtdA) return qtdB - qtdA;
       return a.nome.localeCompare(b.nome);
     });
@@ -63,6 +63,19 @@ export function TerminalVendas() {
       .slice(0, 5);
   }, [produtos, contagemVendas]);
 
+  // 3. Lógica do Histórico Paginado (Preparado para milhares de registos)
+  const vendasOrdenadas = useMemo(() => {
+    if (!vendas) return [];
+    return [...vendas].sort((a, b) => new Date(b.data) - new Date(a.data));
+  }, [vendas]);
+
+  const totalPaginasHistorico = Math.ceil(vendasOrdenadas.length / itensPorPaginaHistorico);
+  const historicoPaginado = useMemo(() => {
+    const inicio = (paginaHistorico - 1) * itensPorPaginaHistorico;
+    return vendasOrdenadas.slice(inicio, inicio + itensPorPaginaHistorico);
+  }, [vendasOrdenadas, paginaHistorico]);
+
+  // 4. Funções do Carrinho
   const adicionarAoCarrinho = (produto) => {
     setCarrinho(prev => {
       const existe = prev.find(item => item.id === produto.id);
@@ -89,10 +102,8 @@ export function TerminalVendas() {
       setCarrinho(prev => prev.map(item => item.id === id ? { ...item, quantidade: '' } : item));
       return;
     }
-
     const valorNumerico = parseInt(valorTexto, 10);
     if (isNaN(valorNumerico)) return;
-
     setCarrinho(prev => prev.map(item => {
       if (item.id === id) {
         const quantidadeAjustada = Math.min(Math.max(1, valorNumerico), item.stock);
@@ -122,7 +133,6 @@ export function TerminalVendas() {
   
   const finalizarVenda = async () => {
     if (carrinho.length === 0) return;
-
     const lucroTotal = carrinho.reduce((acc, item) => {
       const qtd = Number(item.quantidade) || 0;
       return acc + ((item.precoVenda - item.precoCusto) * qtd);
@@ -150,19 +160,142 @@ export function TerminalVendas() {
           await db.produtos.update(item.id, { stock: prodDB.stock - qtd });
         }
       });
-
       window.print();
       setCarrinho([]);
-
     } catch (error) {
       alert("Erro ao processar a venda.");
       console.error(error);
     }
   };
 
+  // 5. Função de Exportação PDF do Histórico do Vendedor
+  const exportarHistoricoVendedorPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(20);
+    doc.setTextColor(249, 115, 22);
+    doc.text("VULPE MART", 14, 22);
+    
+    doc.setFontSize(12);
+    doc.setTextColor(50, 50, 50);
+    doc.text("Histórico Geral de Vendas (Operador)", 14, 30);
+    doc.setFontSize(10);
+    doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-MZ')}`, 14, 36);
+    doc.text(`Total de Registos: ${vendasOrdenadas.length}`, 14, 42);
+
+    const tableData = vendasOrdenadas.map(v => [
+      new Date(v.data).toLocaleString('pt-MZ'),
+      v.itens?.map(i => `${i.quantidade}x ${i.nome}`).join('\n') || 'S/ Detalhes',
+      `${v.totalVenda.toFixed(2)} MT`
+    ]);
+
+    doc.autoTable({
+      startY: 50,
+      head: [['Data e Hora', 'Artigos Vendidos', 'Total Recebido']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [249, 115, 22] },
+      styles: { fontSize: 8, cellPadding: 3 },
+      columnStyles: {
+        0: { cellWidth: 40 },
+        1: { cellWidth: 'auto' },
+        2: { cellWidth: 30, halign: 'right' }
+      }
+    });
+
+    doc.save(`Historico_Vendas_VulpeMart.pdf`);
+  };
+
   return (
     <div className="flex flex-col md:flex-row h-full min-h-screen bg-zinc-50 text-zinc-900 font-sans relative">
       
+      {/* ========================================= */}
+      {/* MODAL DE HISTÓRICO DE VENDAS */}
+      {/* ========================================= */}
+      {mostrarHistorico && (
+        <div className="fixed inset-0 z-50 bg-zinc-900/80 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex justify-between items-center p-6 border-b border-zinc-200 bg-zinc-50">
+              <h2 className="text-2xl font-bold text-zinc-800 flex items-center gap-2">
+                <History className="text-orange-500" /> Histórico de Vendas
+              </h2>
+              <div className="flex gap-3">
+                <button 
+                  onClick={exportarHistoricoVendedorPDF}
+                  className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-900 text-white px-4 py-2 rounded-lg transition-colors font-medium"
+                >
+                  <Download size={18} /> Exportar PDF
+                </button>
+                <button onClick={() => setMostrarHistorico(false)} className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-auto p-6">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-zinc-100 text-zinc-600 sticky top-0 shadow-sm text-sm">
+                  <tr>
+                    <th className="p-4 font-semibold rounded-tl-lg">Data e Hora Exata</th>
+                    <th className="p-4 font-semibold">Artigos Faturados</th>
+                    <th className="p-4 font-semibold text-right rounded-tr-lg">Valor Cobrado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 text-sm">
+                  {historicoPaginado.map(v => (
+                    <tr key={v.id} className="hover:bg-orange-50/50 transition-colors">
+                      <td className="p-4 text-zinc-700 whitespace-nowrap font-medium">
+                        {new Date(v.data).toLocaleString('pt-MZ', { 
+                          day: '2-digit', month: 'long', year: 'numeric', 
+                          hour: '2-digit', minute: '2-digit', second: '2-digit' 
+                        })}
+                      </td>
+                      <td className="p-4 text-zinc-600">
+                        <ul className="list-disc list-inside">
+                          {v.itens?.map((i, idx) => (
+                            <li key={idx}>{i.quantidade}x {i.nome}</li>
+                          ))}
+                        </ul>
+                      </td>
+                      <td className="p-4 font-black text-orange-600 text-right text-lg">{v.totalVenda.toFixed(2)} MT</td>
+                    </tr>
+                  ))}
+                  {historicoPaginado.length === 0 && (
+                    <tr>
+                      <td colSpan="3" className="p-8 text-center text-zinc-500 text-lg">Sem histórico de vendas.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Paginação do Histórico */}
+            {totalPaginasHistorico > 1 && (
+              <div className="flex justify-between items-center p-4 border-t border-zinc-200 bg-zinc-50">
+                <span className="text-sm text-zinc-500 font-medium">
+                  Página {paginaHistorico} de {totalPaginasHistorico} ({vendasOrdenadas.length} registos totais)
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPaginaHistorico(prev => Math.max(prev - 1, 1))}
+                    disabled={paginaHistorico === 1}
+                    className="p-2 border border-zinc-300 bg-white rounded text-zinc-700 hover:border-orange-500 hover:text-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                  <button
+                    onClick={() => setPaginaHistorico(prev => Math.min(prev + 1, totalPaginasHistorico))}
+                    disabled={paginaHistorico === totalPaginasHistorico}
+                    className="p-2 border border-zinc-300 bg-white rounded text-zinc-700 hover:border-orange-500 hover:text-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronRight size={20} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Esquerda: Vitrine e Filtros */}
       <div className="w-full md:w-3/5 p-6 flex flex-col h-full border-r border-zinc-200 print:hidden">
         
@@ -186,7 +319,17 @@ export function TerminalVendas() {
 
         {/* Cabeçalho */}
         <div className="flex flex-col gap-6 mb-6">
-          <h2 className="text-3xl font-black text-orange-500 uppercase tracking-wider">Terminal POS - Vulpe Mart</h2>
+          <div className="flex justify-between items-center">
+            <h2 className="text-3xl font-black text-orange-500 uppercase tracking-wider">Terminal POS</h2>
+            
+            {/* Botão para abrir o Histórico */}
+            <button 
+              onClick={() => setMostrarHistorico(true)}
+              className="flex items-center gap-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold py-2 px-4 rounded-xl border border-zinc-300 transition-colors shadow-sm"
+            >
+              <History size={20} /> Histórico Diário
+            </button>
+          </div>
 
           {/* Cards de Categorias */}
           <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
@@ -266,7 +409,6 @@ export function TerminalVendas() {
               <div className="flex justify-between items-center mt-2">
                 <span className="text-lg font-bold text-zinc-500">{item.precoVenda.toFixed(2)} / un</span>
                 
-                {/* Controlo de Quantidade Aumentado */}
                 <div className="flex items-center gap-2 bg-white border-2 border-zinc-200 rounded-xl p-1.5 shadow-sm">
                   <button 
                     type="button"

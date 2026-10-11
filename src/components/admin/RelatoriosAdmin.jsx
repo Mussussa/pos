@@ -5,7 +5,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line
 } from 'recharts';
-import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, FileText, Download, Calendar } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // ==========================================
 // MÓDULO: SIMULADOR DE PREÇO MÍNIMO (TEMA CLARO VULPE)
@@ -15,7 +17,6 @@ function ModuloPrecoMinimo({ produtos }) {
   const [paginaAtual, setPaginaAtual] = useState(1);
   const itensPorPagina = 10;
 
-  // Filtra produtos pela pesquisa e calcula as páginas (useMemo para performance com centenas de itens)
   const { produtosFiltrados, totalPaginas, produtosPaginados } = useMemo(() => {
     if (!produtos) return { produtosFiltrados: [], totalPaginas: 0, produtosPaginados: [] };
     
@@ -41,7 +42,6 @@ function ModuloPrecoMinimo({ produtos }) {
           </p>
         </div>
         
-        {/* Barra de Pesquisa */}
         <div className="relative w-full md:w-72">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400" size={18} />
           <input
@@ -50,7 +50,7 @@ function ModuloPrecoMinimo({ produtos }) {
             value={busca}
             onChange={(e) => {
               setBusca(e.target.value);
-              setPaginaAtual(1); // Volta à primeira página ao pesquisar
+              setPaginaAtual(1);
             }}
             className="w-full pl-10 pr-4 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 bg-zinc-50 text-zinc-900"
           />
@@ -97,7 +97,6 @@ function ModuloPrecoMinimo({ produtos }) {
         </table>
       </div>
 
-      {/* Controlos de Paginação */}
       {totalPaginas > 1 && (
         <div className="flex justify-between items-center mt-4 pt-4 border-t border-zinc-100">
           <span className="text-sm text-zinc-500">
@@ -124,18 +123,42 @@ function ModuloPrecoMinimo({ produtos }) {
     </div>
   );
 }
-// ==========================================
 
+// ==========================================
+// MÓDULO PRINCIPAL: RELATÓRIOS E HISTÓRICO
+// ==========================================
 export function RelatoriosAdmin() {
-  const vendas = useLiveQuery(() => db.vendas.orderBy('data').reverse().toArray());
+  const [filtroTempo, setFiltroTempo] = useState('tudo');
+  
+  const vendasRaw = useLiveQuery(() => db.vendas.orderBy('data').reverse().toArray());
   const produtos = useLiveQuery(() => db.produtos.toArray());
 
-  // 1. Cálculos Gerais dos Cartões
-  const totalReceitas = vendas?.reduce((acc, venda) => acc + (venda.totalVenda || 0), 0) || 0;
-  const totalLucro = vendas?.reduce((acc, venda) => acc + (venda.lucroTotal || 0), 0) || 0;
-  const numeroVendas = vendas?.length || 0;
+  // 1. Lógica de Filtragem de Datas
+  const vendas = useMemo(() => {
+    if (!vendasRaw) return [];
+    
+    const agora = new Date();
+    const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+    const inicioOntem = new Date(inicioHoje);
+    inicioOntem.setDate(inicioOntem.getDate() - 1);
+    const inicio7Dias = new Date(inicioHoje);
+    inicio7Dias.setDate(inicio7Dias.getDate() - 7);
 
-  // 2. Processamento de Dados para Gráfico: Categorias
+    return vendasRaw.filter(v => {
+      const dataVenda = new Date(v.data);
+      if (filtroTempo === 'hoje') return dataVenda >= inicioHoje;
+      if (filtroTempo === 'ontem') return dataVenda >= inicioOntem && dataVenda < inicioHoje;
+      if (filtroTempo === '7dias') return dataVenda >= inicio7Dias;
+      return true; // 'tudo'
+    });
+  }, [vendasRaw, filtroTempo]);
+
+  // 2. Cálculos Gerais
+  const totalReceitas = vendas.reduce((acc, venda) => acc + (venda.totalVenda || 0), 0);
+  const totalLucro = vendas.reduce((acc, venda) => acc + (venda.lucroTotal || 0), 0);
+  const numeroVendas = vendas.length;
+
+  // 3. Processamento para Gráficos
   const categoriasMap = {
     alimentacao: { name: 'Alimentação', stock: 0, vendido: 0 },
     bebidas: { name: 'Bebidas', stock: 0, vendido: 0 },
@@ -146,37 +169,28 @@ export function RelatoriosAdmin() {
   const prodCat = {};
   produtos?.forEach(p => {
     prodCat[p.id] = p.categoria;
-    if (categoriasMap[p.categoria]) {
-      categoriasMap[p.categoria].stock += p.stock;
-    }
+    if (categoriasMap[p.categoria]) categoriasMap[p.categoria].stock += p.stock;
   });
 
-  vendas?.forEach(v => {
+  const contagemProdutos = {};
+  vendas.forEach(v => {
     v.itens?.forEach(item => {
       const cat = prodCat[item.produtoId];
-      if (cat && categoriasMap[cat]) {
-        categoriasMap[cat].vendido += item.quantidade;
-      }
-    });
-  });
-  const dadosCategorias = Object.values(categoriasMap);
-
-  // 3. Processamento de Dados para Gráfico: Top Produtos
-  const contagemProdutos = {};
-  vendas?.forEach(v => {
-    v.itens?.forEach(item => {
+      if (cat && categoriasMap[cat]) categoriasMap[cat].vendido += item.quantidade;
+      
       if (!contagemProdutos[item.nome]) contagemProdutos[item.nome] = 0;
       contagemProdutos[item.nome] += item.quantidade;
     });
   });
+
+  const dadosCategorias = Object.values(categoriasMap);
   const dadosTopProdutos = Object.entries(contagemProdutos)
     .map(([nome, quantidade]) => ({ nome, quantidade }))
     .sort((a, b) => b.quantidade - a.quantidade)
-    .slice(0, 5); // Mantém os top 5 para o gráfico não ficar ilegível
+    .slice(0, 5);
 
-  // 4. Processamento de Dados para Gráfico Extra: Evolução Diária
   const vendasPorDia = {};
-   [...(vendas || [])].reverse().forEach(v => {
+  [...vendas].reverse().forEach(v => {
     const dataCurta = new Date(v.data).toLocaleDateString('pt-MZ', { day: '2-digit', month: '2-digit' });
     if (!vendasPorDia[dataCurta]) vendasPorDia[dataCurta] = { data: dataCurta, receita: 0, lucro: 0 };
     vendasPorDia[dataCurta].receita += v.totalVenda;
@@ -184,7 +198,103 @@ export function RelatoriosAdmin() {
   });
   const dadosEvolucao = Object.values(vendasPorDia);
 
-  // Estilo do Tooltip adaptado para tema claro
+  // 5. Função de Exportação para PDF (Agora com Vendas e Stock)
+  const exportarPDF = () => {
+    const doc = new jsPDF();
+    
+    // Cabeçalho Principal
+    doc.setFontSize(20);
+    doc.setTextColor(249, 115, 22); // Orange
+    doc.text("VULPE MART", 14, 22);
+    
+    doc.setFontSize(12);
+    doc.setTextColor(50, 50, 50);
+    doc.text("Relatório Administrativo de Vendas e Stock", 14, 30);
+    
+    const rotulosTempo = {
+      'hoje': 'Hoje', 'ontem': 'Ontem', '7dias': 'Últimos 7 Dias', 'tudo': 'Todo o Histórico'
+    };
+    
+    // Resumo Financeiro
+    doc.setFontSize(10);
+    doc.text(`Período Filtrado: ${rotulosTempo[filtroTempo]}`, 14, 40);
+    doc.text(`Total de Transações: ${numeroVendas}`, 14, 46);
+    doc.text(`Receita Bruta: ${totalReceitas.toFixed(2)} MT`, 14, 52);
+    doc.text(`Lucro Líquido Estimado: ${totalLucro.toFixed(2)} MT`, 14, 58);
+    doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-MZ')}`, 14, 64);
+
+    // ==========================================
+    // TABELA 1: HISTÓRICO DE VENDAS
+    // ==========================================
+    doc.setFontSize(12);
+    doc.setTextColor(249, 115, 22);
+    doc.text("1. Histórico de Transações", 14, 76);
+
+    const tableDataVendas = vendas.map(v => [
+      new Date(v.data).toLocaleString('pt-MZ'),
+      v.itens?.map(i => `${i.quantidade}x ${i.nome}`).join('\n') || 'S/ Detalhes',
+      `${v.totalVenda.toFixed(2)} MT`,
+      `${v.lucroTotal.toFixed(2)} MT`
+    ]);
+
+    autoTable(doc, {
+      startY: 80,
+      head: [['Data e Hora', 'Artigos Vendidos', 'Total Recebido', 'Lucro']],
+      body: tableDataVendas,
+      theme: 'grid',
+      headStyles: { fillColor: [249, 115, 22] }, 
+      styles: { fontSize: 8, cellPadding: 3 },
+      columnStyles: {
+        0: { cellWidth: 35 },
+        1: { cellWidth: 'auto' },
+        2: { cellWidth: 25, halign: 'right' },
+        3: { cellWidth: 25, halign: 'right' }
+      }
+    });
+
+    // Posição Y onde a tabela de vendas terminou
+    let finalY = doc.lastAutoTable.finalY + 15;
+
+    // Se não houver espaço suficiente para o título da próxima tabela, cria uma nova página
+    if (finalY > 260) {
+      doc.addPage();
+      finalY = 20;
+    }
+
+    // ==========================================
+    // TABELA 2: POSIÇÃO ATUAL DE STOCK
+    // ==========================================
+    doc.setFontSize(12);
+    doc.setTextColor(249, 115, 22);
+    doc.text("2. Posição Atual de Stock", 14, finalY);
+
+    const tableDataStock = produtos?.map(p => [
+      p.nome,
+      p.categoria.toUpperCase(),
+      `${p.stock}`,
+      `${p.precoCusto.toFixed(2)} MT`,
+      `${p.precoVenda.toFixed(2)} MT`
+    ]) || [];
+
+    autoTable(doc, {
+      startY: finalY + 5,
+      head: [['Produto', 'Categoria', 'Quantidade em Stock', 'P. Custo', 'P. Venda']],
+      body: tableDataStock,
+      theme: 'grid',
+      headStyles: { fillColor: [82, 82, 91] }, // Cinza escuro para diferenciar da tabela de vendas
+      styles: { fontSize: 8, cellPadding: 3 },
+      columnStyles: {
+        0: { cellWidth: 'auto' },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 35, halign: 'center', fontStyle: 'bold' },
+        3: { cellWidth: 25, halign: 'right' },
+        4: { cellWidth: 25, halign: 'right' }
+      }
+    });
+
+    doc.save(`Relatorio_VulpeMart_${filtroTempo}.pdf`);
+  };
+
   const customTooltipStyle = {
     backgroundColor: '#ffffff',
     border: '1px solid #e4e4e7',
@@ -195,16 +305,44 @@ export function RelatoriosAdmin() {
 
   return (
     <div className="p-6 bg-zinc-50 min-h-full text-zinc-900 font-sans">
-      <h2 className="text-2xl font-bold mb-6 text-orange-500 uppercase tracking-wider">Painel de Desempenho - Vulpe Mart</h2>
+      
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 border-b border-zinc-200 pb-4">
+        <h2 className="text-2xl font-bold text-orange-500 uppercase tracking-wider flex items-center gap-2">
+          <FileText size={28} /> Painel de Desempenho
+        </h2>
 
-      {/* Cartões de Resumo */}
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="relative flex-1 md:w-auto">
+            <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400" size={18} />
+            <select
+              value={filtroTempo}
+              onChange={(e) => setFiltroTempo(e.target.value)}
+              className="w-full md:w-auto pl-10 pr-8 py-2 bg-white border border-zinc-300 rounded-lg focus:outline-none focus:border-orange-500 text-zinc-700 font-medium"
+            >
+              <option value="hoje">Hoje</option>
+              <option value="ontem">Ontem</option>
+              <option value="7dias">Últimos 7 dias</option>
+              <option value="tudo">Todo o Histórico</option>
+            </select>
+          </div>
+          
+          <button 
+            onClick={exportarPDF}
+            disabled={vendas.length === 0 && produtos?.length === 0}
+            className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-900 text-white py-2 px-4 rounded-lg transition-colors font-medium disabled:opacity-50"
+          >
+            <Download size={18} /> <span className="hidden md:inline">Exportar PDF</span>
+          </button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <div className="bg-white p-6 rounded-lg shadow-sm border border-zinc-200">
-          <p className="text-zinc-500 text-sm font-semibold uppercase">Receita Bruta (Entradas)</p>
+          <p className="text-zinc-500 text-sm font-semibold uppercase">Receita Bruta ({filtroTempo})</p>
           <p className="text-3xl font-bold text-zinc-800 mt-2">{totalReceitas.toFixed(2)} MT</p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow-sm border border-zinc-200">
-          <p className="text-zinc-500 text-sm font-semibold uppercase">Lucro Líquido</p>
+          <p className="text-zinc-500 text-sm font-semibold uppercase">Lucro Líquido ({filtroTempo})</p>
           <p className="text-3xl font-bold text-orange-500 mt-2">{totalLucro.toFixed(2)} MT</p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow-sm border border-zinc-200">
@@ -213,10 +351,46 @@ export function RelatoriosAdmin() {
         </div>
       </div>
 
-      {/* Área dos Gráficos */}
+      <div className="bg-white border border-zinc-200 rounded-lg shadow-sm mb-8 overflow-hidden">
+        <div className="p-4 border-b border-zinc-200 bg-zinc-50">
+          <h3 className="font-bold text-zinc-800">Histórico de Transações e Horários</h3>
+        </div>
+        <div className="overflow-x-auto max-h-96">
+          <table className="w-full text-left">
+            <thead className="bg-zinc-100 text-zinc-600 sticky top-0 text-sm">
+              <tr>
+                <th className="p-3 font-semibold">Data e Hora</th>
+                <th className="p-3 font-semibold">Artigos Comprados</th>
+                <th className="p-3 font-semibold text-right">Valor Pago</th>
+                <th className="p-3 font-semibold text-right">Lucro</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100 text-sm">
+              {vendas.map(v => (
+                <tr key={v.id} className="hover:bg-orange-50/50">
+                  <td className="p-3 text-zinc-700 whitespace-nowrap">{new Date(v.data).toLocaleString('pt-MZ')}</td>
+                  <td className="p-3 text-zinc-600">
+                    <ul className="list-disc list-inside">
+                      {v.itens?.map((i, idx) => (
+                        <li key={idx}>{i.quantidade}x {i.nome}</li>
+                      ))}
+                    </ul>
+                  </td>
+                  <td className="p-3 font-bold text-zinc-800 text-right">{v.totalVenda.toFixed(2)} MT</td>
+                  <td className="p-3 text-orange-600 font-bold text-right">{v.lucroTotal.toFixed(2)} MT</td>
+                </tr>
+              ))}
+              {vendas.length === 0 && (
+                <tr>
+                  <td colSpan="4" className="p-8 text-center text-zinc-500">Nenhuma venda registada neste período.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        
-        {/* Gráfico 1: Categorias */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-zinc-200">
           <h3 className="font-bold text-zinc-800 mb-6">Desempenho por Categoria</h3>
           <div className="h-72">
@@ -234,7 +408,6 @@ export function RelatoriosAdmin() {
           </div>
         </div>
 
-        {/* Gráfico 2: Top Produtos */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-zinc-200">
           <h3 className="font-bold text-zinc-800 mb-6">Top 5 Produtos Mais Vendidos</h3>
           <div className="h-72">
@@ -250,9 +423,8 @@ export function RelatoriosAdmin() {
           </div>
         </div>
 
-        {/* Gráfico 3: Evolução de Vendas */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-zinc-200 lg:col-span-2">
-          <h3 className="font-bold text-zinc-800 mb-6">Evolução de Receitas e Lucro</h3>
+          <h3 className="font-bold text-zinc-800 mb-6">Evolução de Receitas e Lucro Diário</h3>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={dadosEvolucao}>
@@ -267,10 +439,8 @@ export function RelatoriosAdmin() {
             </ResponsiveContainer>
           </div>
         </div>
-
       </div>
 
-      {/* Simulador de Preços com Paginação e Pesquisa */}
       <ModuloPrecoMinimo produtos={produtos} />
 
     </div>
