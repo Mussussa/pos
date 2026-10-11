@@ -139,15 +139,16 @@ export function BackupGlobal() {
   };
 
   const verificarBackupAutomatico = async () => {
-    if (!navigator.onLine) return; 
+    // Retirada a exigência de internet (!navigator.onLine)
     const config = await db.sistema.get('config_backup');
     if (!config?.ultimaData || !config?.diretorioHandle) return;
 
     const dataUltimo = new Date(config.ultimaData).getTime();
     const agora = Date.now();
-    const quatroHorasEmMs = 4 * 60 * 60 * 1000;
+    // Tempo alterado de 4 horas para 2 horas
+    const duasHorasEmMs = 2 * 60 * 60 * 1000;
 
-    if (agora - dataUltimo >= quatroHorasEmMs) {
+    if (agora - dataUltimo >= duasHorasEmMs) {
       await executarBackup(false);
     }
   };
@@ -200,17 +201,16 @@ export function BackupGlobal() {
         
         <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-lg shadow-lg">
           <h3 className="text-lg font-bold text-zinc-100 flex items-center gap-2 mb-4">
-            <RefreshCw className={navigator.onLine ? "text-green-500" : "text-zinc-500"} /> 
+            <RefreshCw className="text-green-500" /> 
             Backup Automático Encriptado
           </h3>
           
           <p className="text-zinc-400 text-sm mb-4">
-            O sistema guarda o stock e as vendas na pasta escolhida a cada 4 horas. 
+            O sistema guarda o stock e as vendas na pasta escolhida a cada 2 horas. 
             Os ficheiros ficam completamente ilegíveis fora do sistema.
           </p>
 
           <div className="bg-zinc-950 p-3 rounded border border-zinc-800 mb-6 flex flex-col gap-1 text-sm">
-            <span>Status da Internet: {navigator.onLine ? <span className="text-green-500 font-bold">Online</span> : <span className="text-red-500 font-bold">Offline</span>}</span>
             <span>Pasta Ligada: {pastaConfigurada ? <span className="text-green-500 font-bold">Sim</span> : <span className="text-red-500 font-bold">Não</span>}</span>
             <span>Último Backup: <span className="font-bold text-zinc-200">{ultimoBackup ? ultimoBackup.toLocaleString('pt-MZ') : 'Nunca'}</span></span>
           </div>
