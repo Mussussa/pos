@@ -12,7 +12,7 @@ import {
   ShoppingCart,
   LogOut,
   DatabaseBackup,
-  Users // Ícone adicionado aqui
+  Users 
 } from "lucide-react";
 
 // Caminhos corrigidos para bater certo com as pastas criadas
@@ -21,8 +21,8 @@ import { RelatoriosAdmin } from "./components/admin/RelatoriosAdmin";
 import { BackupGlobal } from "./components/admin/BackupGlobal";
 import { GestaoUsuarios } from "./components/admin/GestaoUsuarios";
 import { TerminalVendas } from "./components/vendedor/TerminalVendas";
-import { Login } from "./components/Login"; // Caminho corrigido
-import { AuthProvider, useAuth } from "./AuthContext"; // Caminho corrigido
+import { Login } from "./components/Login"; 
+import { AuthProvider, useAuth } from "./AuthContext"; 
 
 function Sidebar() {
   const location = useLocation();
@@ -34,7 +34,8 @@ function Sidebar() {
       : "text-zinc-400 hover:bg-zinc-900/50 hover:text-red-400";
 
   return (
-    <div className="w-64 min-h-screen bg-zinc-950 p-4 flex flex-col border-r border-zinc-800 print:hidden">
+    // AQUI: Adicionado 'h-screen sticky top-0' em vez de 'min-h-screen'
+    <div className="w-64 h-screen sticky top-0 bg-zinc-950 p-4 flex flex-col border-r border-zinc-800 print:hidden overflow-y-auto">
       <div className="mb-8 p-2 border-b border-zinc-800 pb-6 flex flex-col items-center text-center">
         <img
           src="/logo_misto.jpeg"
@@ -113,7 +114,7 @@ function SistemaPrincipal() {
   if (!user) return <Login />;
 
   return (
-    <div className="flex bg-zinc-950 print:bg-white min-h-screen font-sans text-zinc-100">
+    <div className="flex bg-zinc-950 print:bg-white min-h-screen font-sans text-zinc-100 relative">
       <Sidebar />
       <main className="flex-1 overflow-y-auto print:overflow-visible">
         <Routes>
