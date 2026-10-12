@@ -31,69 +31,101 @@ function Sidebar() {
   const linkAtivo = (caminho) =>
     location.pathname === caminho
       ? "bg-zinc-900 text-orange-500 border-r-4 border-orange-600 shadow-[inset_0px_0px_15px_rgba(249,115,22,0.05)]"
-      : "text-zinc-400 hover:bg-zinc-900/50 hover:text-orange-400";
+      : "text-zinc-400 hover:bg-zinc-900/50 hover:text-orange-400 border-r-4 border-transparent";
 
   return (
-    // Transformado em <aside> fixo com 'sticky top-0 h-screen shrink-0'
-    <aside className="w-64 h-screen sticky top-0 bg-zinc-950 p-4 flex flex-col border-r border-zinc-800 print:hidden shrink-0">
-      <div className="mb-8 p-2 border-b border-zinc-800 pb-6 flex flex-col items-center text-center">
+    // Adicionada a classe 'group', w-[80px] padrão e hover:w-64 com transition-all
+    <aside className="group w-[80px] hover:w-64 h-screen sticky top-0 bg-zinc-950 flex flex-col border-r border-zinc-800 print:hidden shrink-0 transition-all duration-300 ease-in-out z-50 overflow-hidden shadow-2xl">
+      
+      {/* Cabeçalho do Menu (Logótipo e Perfil) */}
+      <div className="mb-6 py-6 border-b border-zinc-800 flex flex-col items-center">
         <img
           src="/logo_vulpe_instinct.png"
           alt="Vulpe Mart Logótipo"
-          className="w-32 h-auto mb-4 rounded-xl shadow-[0_0_20px_rgba(249,115,22,0.15)] border border-zinc-800"
+          // Logótipo encolhe e cresce com o hover
+          className="w-10 group-hover:w-24 h-auto rounded-xl shadow-[0_0_20px_rgba(249,115,22,0.15)] border border-zinc-800 transition-all duration-300 object-cover"
         />
-        <h1 className="text-xl font-bold text-zinc-100 tracking-wider">
-          VULPE <span className="text-orange-500">MART</span>
-        </h1>
-        <p className="text-xs text-zinc-500 uppercase tracking-widest mt-1">
-          Operador:{" "}
-          <span className="text-zinc-300 font-bold">{user.username}</span>
-        </p>
+        
+        {/* Textos ocultos que deslizam ao passar o rato */}
+        <div className="flex flex-col items-center overflow-hidden transition-all duration-300 max-h-0 opacity-0 group-hover:max-h-20 group-hover:opacity-100 group-hover:mt-4">
+          <h1 className="text-xl font-bold text-zinc-100 tracking-wider whitespace-nowrap">
+            VULPE <span className="text-orange-500">MART</span>
+          </h1>
+          <p className="text-xs text-zinc-500 uppercase tracking-widest mt-1 whitespace-nowrap">
+            Op: <span className="text-zinc-300 font-bold">{user.username}</span>
+          </p>
+        </div>
       </div>
 
-      <nav className="flex-1 space-y-2 overflow-y-auto pr-1 custom-scrollbar">
+      {/* Navegação */}
+      <nav className="flex-1 space-y-2 overflow-y-auto overflow-x-hidden custom-scrollbar px-3">
         {user.role === "admin" && (
           <>
             <Link
               to="/"
-              className={`flex items-center gap-3 p-3 rounded-lg transition-all font-medium ${linkAtivo("/")}`}
+              className={`flex items-center p-3 rounded-lg transition-all font-medium ${linkAtivo("/")}`}
             >
-              <BarChart3 size={20} /> Relatórios e Lucros
+              <div className="w-8 flex justify-center shrink-0"><BarChart3 size={22} /></div>
+              <span className="ml-3 opacity-0 w-0 group-hover:w-auto group-hover:opacity-100 whitespace-nowrap overflow-hidden transition-all duration-300">
+                Relatórios e Lucros
+              </span>
             </Link>
+
             <Link
               to="/stock"
-              className={`flex items-center gap-3 p-3 rounded-lg transition-all font-medium ${linkAtivo("/stock")}`}
+              className={`flex items-center p-3 rounded-lg transition-all font-medium ${linkAtivo("/stock")}`}
             >
-              <Package size={20} /> Gestão de Stock
+              <div className="w-8 flex justify-center shrink-0"><Package size={22} /></div>
+              <span className="ml-3 opacity-0 w-0 group-hover:w-auto group-hover:opacity-100 whitespace-nowrap overflow-hidden transition-all duration-300">
+                Gestão de Stock
+              </span>
             </Link>
+
             <Link
               to="/usuarios"
-              className={`flex items-center gap-3 p-3 rounded-lg transition-all font-medium ${linkAtivo("/usuarios")}`}
+              className={`flex items-center p-3 rounded-lg transition-all font-medium ${linkAtivo("/usuarios")}`}
             >
-              <Users size={20} /> Equipa e Acessos
+              <div className="w-8 flex justify-center shrink-0"><Users size={22} /></div>
+              <span className="ml-3 opacity-0 w-0 group-hover:w-auto group-hover:opacity-100 whitespace-nowrap overflow-hidden transition-all duration-300">
+                Equipa e Acessos
+              </span>
             </Link>
+
             <Link
               to="/backup"
-              className={`flex items-center gap-3 p-3 rounded-lg transition-all font-medium ${linkAtivo("/backup")}`}
+              className={`flex items-center p-3 rounded-lg transition-all font-medium ${linkAtivo("/backup")}`}
             >
-              <DatabaseBackup size={20} /> Segurança e Backup
+              <div className="w-8 flex justify-center shrink-0"><DatabaseBackup size={22} /></div>
+              <span className="ml-3 opacity-0 w-0 group-hover:w-auto group-hover:opacity-100 whitespace-nowrap overflow-hidden transition-all duration-300">
+                Segurança e Backup
+              </span>
             </Link>
           </>
         )}
+        
         <Link
           to="/pos"
-          className={`flex items-center gap-3 p-3 rounded-lg transition-all font-medium ${linkAtivo("/pos")}`}
+          className={`flex items-center p-3 rounded-lg transition-all font-medium ${linkAtivo("/pos")}`}
         >
-          <ShoppingCart size={20} /> Terminal de Vendas
+          <div className="w-8 flex justify-center shrink-0"><ShoppingCart size={22} /></div>
+          <span className="ml-3 opacity-0 w-0 group-hover:w-auto group-hover:opacity-100 whitespace-nowrap overflow-hidden transition-all duration-300">
+            Terminal de Vendas
+          </span>
         </Link>
       </nav>
 
-      <button
-        onClick={logout}
-        className="flex items-center gap-3 p-3 text-zinc-500 hover:bg-orange-950/30 hover:text-orange-500 rounded-lg transition-colors mt-auto font-medium pt-4 border-t border-zinc-900"
-      >
-        <LogOut size={20} /> Sair do Sistema
-      </button>
+      {/* Botão de Logout */}
+      <div className="p-3 border-t border-zinc-900 mt-auto">
+        <button
+          onClick={logout}
+          className="w-full flex items-center p-3 text-zinc-500 hover:bg-orange-950/30 hover:text-orange-500 rounded-lg transition-colors font-medium"
+        >
+          <div className="w-8 flex justify-center shrink-0"><LogOut size={22} /></div>
+          <span className="ml-3 opacity-0 w-0 group-hover:w-auto group-hover:opacity-100 whitespace-nowrap overflow-hidden transition-all duration-300">
+            Sair do Sistema
+          </span>
+        </button>
+      </div>
     </aside>
   );
 }
@@ -112,10 +144,9 @@ function SistemaPrincipal() {
   if (!user) return <Login />;
 
   return (
-    // Layout ajustado para conter a altura total do ecrã e rolar apenas o <main>
     <div className="flex h-screen overflow-hidden bg-zinc-950 print:bg-white font-sans text-zinc-100">
       <Sidebar />
-      <main className="flex-1 h-screen overflow-y-auto print:overflow-visible">
+      <main className="flex-1 h-screen overflow-y-auto print:overflow-visible transition-all duration-300">
         <Routes>
           <Route path="/pos" element={<TerminalVendas />} />
 

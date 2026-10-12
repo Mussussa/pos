@@ -5,7 +5,6 @@ import { ShoppingCart, Printer, Trash2, Plus, Minus, Search, History, X, Downloa
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
-// Novo mapa de categorias com secções melhoradas
 const mapaCategorias = {
   alimentacao: { 
     prefixo: 'A', 
@@ -275,7 +274,7 @@ export function TerminalVendas() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-zinc-50 text-zinc-900 font-sans relative md:overflow-hidden">
+    <div className="flex flex-col md:flex-row h-full min-h-screen bg-zinc-50 text-zinc-900 font-sans relative">
 
       {/* MODAL DE HISTÓRICO DE VENDAS */}
       {mostrarHistorico && (
@@ -323,7 +322,7 @@ export function TerminalVendas() {
                           ))}
                         </ul>
                       </td>
-                      <td className="p-3 md:p-4 font-black text-orange-600 text-right text-base md:text-lg">{v.totalVenda.toFixed(2)}</td>
+                      <td className="p-3 md:p-4 font-black text-orange-600 text-right text-base md:text-lg">{v.totalVenda.toFixed(2)} MT</td>
                     </tr>
                   ))}
                   {historicoPaginado.length === 0 && (
@@ -362,11 +361,11 @@ export function TerminalVendas() {
         </div>
       )}
 
-      {/* Esquerda: Vitrine e Filtros */}
-      <div className="w-full md:w-3/5 p-4 md:p-6 flex flex-col h-auto md:h-full border-b md:border-b-0 md:border-r border-zinc-200 print:hidden overflow-hidden">
+      {/* Esquerda: Vitrine e Filtros - Ajuste de proporção para lg:[65%] */}
+      <div className="w-full md:w-3/5 lg:w-[65%] p-4 md:p-6 flex flex-col h-screen md:h-full overflow-hidden print:hidden border-b md:border-b-0 md:border-r border-zinc-200">
 
         {/* Letreiro de Giro */}
-        <div className="mb-4 md:mb-6 bg-white border border-orange-200 rounded-xl p-3 md:p-4 overflow-hidden shadow-sm flex items-center gap-3 md:gap-4">
+        <div className="mb-4 md:mb-6 bg-white border border-orange-200 rounded-xl p-3 md:p-4 shadow-sm flex items-center gap-3 md:gap-4 shrink-0">
           <span className="bg-orange-500 text-white text-xs md:text-sm font-bold uppercase px-2 py-1.5 md:px-3 md:py-2 rounded shrink-0 animate-pulse">
             🔥 Top
           </span>
@@ -384,7 +383,7 @@ export function TerminalVendas() {
         </div>
 
         {/* Cabeçalho e Filtros */}
-        <div className="flex flex-col gap-4 md:gap-6 mb-4 md:mb-6">
+        <div className="flex flex-col gap-4 md:gap-6 mb-4 md:mb-6 shrink-0">
           <div className="flex justify-between items-center">
             <h2 className="text-2xl md:text-3xl font-black text-orange-500 uppercase tracking-wider">POS</h2>
             <button 
@@ -404,7 +403,7 @@ export function TerminalVendas() {
                     key={cat.id}
                     type="button"
                     onClick={() => mudarCategoria(cat.id)}
-                    className={`px-4 py-2.5 md:px-6 md:py-4 rounded-xl md:rounded-2xl text-sm md:text-lg font-bold border-2 transition-all shrink-0 shadow-sm ${
+                    className={`px-4 py-2 md:px-6 md:py-3 rounded-xl md:rounded-2xl text-sm md:text-base font-bold border-2 transition-all shrink-0 shadow-sm ${
                       selecionada
                         ? 'bg-orange-500 text-white border-orange-500 shadow-orange-200'
                         : 'bg-white text-zinc-700 border-zinc-200 hover:border-orange-400 hover:text-orange-600'
@@ -420,7 +419,7 @@ export function TerminalVendas() {
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setFiltroSubcategoria('todas')}
-                  className={`px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl text-xs md:text-sm font-bold border transition-all ${
+                  className={`px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl text-xs font-bold border transition-all ${
                     filtroSubcategoria === 'todas'
                       ? 'bg-zinc-800 text-white border-zinc-800'
                       : 'bg-white text-zinc-600 border-zinc-300 hover:border-zinc-500'
@@ -432,7 +431,7 @@ export function TerminalVendas() {
                   <button
                     key={sub}
                     onClick={() => setFiltroSubcategoria(sub)}
-                    className={`px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl text-xs md:text-sm font-bold border transition-all ${
+                    className={`px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl text-xs font-bold border transition-all ${
                       filtroSubcategoria === sub
                         ? 'bg-zinc-800 text-white border-zinc-800'
                         : 'bg-white text-zinc-600 border-zinc-300 hover:border-zinc-500'
@@ -446,66 +445,67 @@ export function TerminalVendas() {
           </div>
 
           <div className="relative flex items-center">
-            <Search className="absolute left-4 text-zinc-400" size={22} />
+            <Search className="absolute left-4 text-zinc-400" size={20} />
             <input 
               type="text"
               placeholder="Pesquisar artigo ou código..."
               value={pesquisa}
               onChange={(e) => setPesquisa(e.target.value)}
-              className="w-full bg-white border-2 border-zinc-300 text-zinc-900 placeholder-zinc-400 pl-[3.25rem] pr-4 py-3 md:py-4 text-base md:text-xl rounded-xl md:rounded-2xl focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 shadow-sm transition-all"
+              className="w-full bg-white border-2 border-zinc-300 text-zinc-900 placeholder-zinc-400 pl-[3rem] pr-4 py-3 md:py-3.5 text-base rounded-xl md:rounded-2xl focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 shadow-sm transition-all"
             />
           </div>
         </div>
 
-        {/* Vitrine de Produtos */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:flex-1 md:overflow-y-auto pb-6 custom-scrollbar pr-1 md:pr-2">
+        {/* Vitrine de Produtos - Grelha melhorada (2 colunas em lg, 3 em xl) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4 flex-1 overflow-y-auto pb-6 custom-scrollbar pr-2">
           {produtosVitrine?.map(p => (
             <button 
               key={p.id}
               onClick={() => adicionarAoCarrinho(p)}
-              className="bg-white border-2 border-zinc-200 p-4 md:p-5 rounded-2xl shadow-sm hover:border-orange-500 hover:shadow-lg transition-all text-left flex flex-col justify-between min-h-[140px] md:min-h-[160px] active:scale-95 group"
+              className="bg-white border-2 border-zinc-200 p-4 rounded-2xl shadow-sm hover:border-orange-500 hover:shadow-lg transition-all text-left flex flex-col min-h-[140px] active:scale-95 group"
             >
-              <div>
+              <div className="w-full">
                 <div className="flex justify-between items-start mb-2">
                   <span className="text-[10px] md:text-xs text-orange-700 bg-orange-100 px-2 py-1 rounded font-bold uppercase">{p.categoria}</span>
                   {p.codigo && (
                     <span className="text-[10px] md:text-xs text-zinc-500 font-mono bg-zinc-100 px-2 py-1 rounded border border-zinc-200">{p.codigo}</span>
                   )}
                 </div>
-                <h3 className="font-bold text-zinc-800 text-lg md:text-xl leading-tight line-clamp-2 group-hover:text-orange-600 transition-colors">{p.nome}</h3>
+                <h3 className="font-bold text-zinc-800 text-base md:text-lg leading-tight line-clamp-2 group-hover:text-orange-600 transition-colors">{p.nome}</h3>
               </div>
-              <div className="flex justify-between items-end mt-3 md:mt-4 w-full">
-                <span className="text-xs md:text-sm font-bold text-zinc-500 bg-zinc-100 px-2 py-1 rounded">Stk: {p.stock}</span>
-                <span className="font-black text-orange-600 text-xl md:text-2xl">{p.precoVenda.toFixed(2)} <span className="text-sm md:text-base text-orange-400">MT</span></span>
+              
+              {/* flex-wrap e mt-auto previnem a sobreposição dos textos */}
+              <div className="flex flex-wrap justify-between items-center mt-auto pt-3 md:pt-4 w-full gap-2">
+                <span className="text-xs md:text-sm font-bold text-zinc-500 bg-zinc-100 px-2 py-1 rounded whitespace-nowrap">Stk: {p.stock}</span>
+                <span className="font-black text-orange-600 text-lg md:text-xl whitespace-nowrap">{p.precoVenda.toFixed(2)} <span className="text-xs md:text-sm text-orange-400">MT</span></span>
               </div>
             </button>
           ))}
           {produtosVitrine?.length === 0 && (
-            <div className="col-span-full flex flex-col items-center justify-center p-10 md:p-16 text-zinc-400 border-2 border-dashed border-zinc-300 rounded-2xl bg-white">
+            <div className="col-span-full flex flex-col items-center justify-center p-10 text-zinc-400 border-2 border-dashed border-zinc-300 rounded-2xl bg-white min-h-[200px]">
               <Search size={40} className="mb-4 opacity-30" />
-              <p className="text-lg md:text-xl font-medium text-center">Nenhum artigo encontrado.</p>
+              <p className="text-lg font-medium text-center">Nenhum artigo encontrado.</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Direita: Carrinho */}
-      <div className="w-full md:w-2/5 bg-white border-l-0 md:border-l-2 border-zinc-200 p-4 md:p-6 flex flex-col h-auto md:h-full shadow-2xl z-10 print:hidden">
-        <h3 className="text-2xl md:text-3xl font-black text-zinc-800 mb-4 md:mb-6 flex items-center gap-3">
-          <ShoppingCart className="text-orange-500" size={28} /> Carrinho Atual
+      {/* Direita: Carrinho - Ajuste de proporção para lg:[35%] */}
+      <div className="w-full md:w-2/5 lg:w-[35%] bg-white border-l border-zinc-200 p-4 md:p-6 flex flex-col h-auto md:h-screen shadow-2xl z-10 print:hidden overflow-hidden">
+        <h3 className="text-xl md:text-2xl font-black text-zinc-800 mb-4 md:mb-6 flex items-center gap-3 shrink-0">
+          <ShoppingCart className="text-orange-500" size={24} /> Carrinho Atual
         </h3>
 
-        <div className="flex-1 overflow-y-auto space-y-3 md:space-y-4 pr-1 md:pr-2 custom-scrollbar max-h-[50vh] md:max-h-none">
+        <div className="flex-1 overflow-y-auto space-y-3 md:space-y-4 pr-1 md:pr-2 custom-scrollbar min-h-[250px]">
           {carrinho.map(item => (
-            <div key={item.id} className="bg-zinc-50 p-4 md:p-5 rounded-2xl border-2 border-zinc-200 flex flex-col hover:border-zinc-300 transition-colors">
+            <div key={item.id} className="bg-zinc-50 p-4 rounded-2xl border-2 border-zinc-200 flex flex-col hover:border-zinc-300 transition-colors">
               <div className="flex justify-between items-start gap-2">
-                <span className="font-bold text-zinc-900 text-lg md:text-xl leading-tight">{item.nome}</span>
-                <span className="font-black text-orange-600 text-xl md:text-2xl whitespace-nowrap">{(item.precoVenda * (parseFloat(item.quantidade) || 0)).toFixed(2)} MT</span>
+                <span className="font-bold text-zinc-900 text-base md:text-lg leading-tight">{item.nome}</span>
+                <span className="font-black text-orange-600 text-lg md:text-xl whitespace-nowrap">{(item.precoVenda * (parseFloat(item.quantidade) || 0)).toFixed(2)} MT</span>
               </div>
 
-              {/* Controlos Clássicos (Quantidade) */}
               <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center mt-3 gap-3">
-                <span className="text-base md:text-lg font-bold text-zinc-500">{item.precoVenda.toFixed(2)} / {item.unidadeMedida || 'un'}</span>
+                <span className="text-sm md:text-base font-bold text-zinc-500">{item.precoVenda.toFixed(2)} / {item.unidadeMedida || 'un'}</span>
 
                 <div className="flex items-center gap-1 sm:gap-2 bg-white border-2 border-zinc-200 rounded-xl p-1 shadow-sm w-full sm:w-auto justify-between sm:justify-start">
                   <button 
@@ -514,7 +514,7 @@ export function TerminalVendas() {
                     disabled={parseFloat(item.quantidade) <= (["kg", "litro"].includes(item.unidadeMedida?.toLowerCase()) ? 0.01 : 1)}
                     className="text-zinc-600 hover:text-white hover:bg-orange-500 rounded-lg p-2 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-600"
                   >
-                    <Minus size={20} strokeWidth={3} />
+                    <Minus size={18} strokeWidth={3} />
                   </button>
 
                   <input
@@ -525,7 +525,7 @@ export function TerminalVendas() {
                     value={item.quantidade}
                     onChange={(e) => definirQuantidadeManual(item.id, e.target.value)}
                     onBlur={() => validarQuantidadeAoSair(item.id)}
-                    className="w-16 md:w-20 text-center text-zinc-900 font-black text-lg md:text-xl bg-zinc-50 rounded-lg border border-transparent focus:border-orange-500 focus:bg-white focus:outline-none py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className="w-14 md:w-16 text-center text-zinc-900 font-black text-base md:text-lg bg-zinc-50 rounded-lg border border-transparent focus:border-orange-500 focus:bg-white focus:outline-none py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
 
                   <button 
@@ -534,22 +534,21 @@ export function TerminalVendas() {
                     disabled={parseFloat(item.quantidade) >= item.stock}
                     className="text-zinc-600 hover:text-white hover:bg-orange-500 rounded-lg p-2 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-600"
                   >
-                    <Plus size={20} strokeWidth={3} />
+                    <Plus size={18} strokeWidth={3} />
                   </button>
 
-                  <div className="w-px h-6 md:h-8 bg-zinc-300 mx-1 md:mx-2"></div>
+                  <div className="w-px h-6 bg-zinc-300 mx-1 md:mx-2"></div>
 
                   <button 
                     type="button"
                     onClick={() => removerDoCarrinho(item.id)} 
                     className="text-red-500 hover:text-white hover:bg-red-500 rounded-lg p-2 transition-colors"
                   >
-                    <Trash2 size={20} />
+                    <Trash2 size={18} />
                   </button>
                 </div>
               </div>
 
-              {/* Venda por Dinheiro (Apenas para produtos a Kg) */}
               {item.unidadeMedida?.toLowerCase() === 'kg' && (
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mt-3 bg-orange-50 p-3 rounded-xl border border-orange-200 gap-2">
                   <span className="text-xs md:text-sm font-bold text-orange-800">Ou vender por valor:</span>
@@ -561,37 +560,37 @@ export function TerminalVendas() {
                       value={item.valorInput !== null && item.valorInput !== undefined ? item.valorInput : (item.quantidade === '' ? '' : Number((parseFloat(item.quantidade) * item.precoVenda).toFixed(2)))}
                       onChange={(e) => definirPorValorManual(item.id, e.target.value)}
                       onBlur={() => validarValorAoSair(item.id)}
-                      className="w-full sm:w-24 text-center text-orange-700 font-black text-lg md:text-xl bg-white rounded-lg border border-orange-300 focus:outline-none focus:border-orange-500 py-1"
+                      className="w-full sm:w-20 text-center text-orange-700 font-black text-base md:text-lg bg-white rounded-lg border border-orange-300 focus:outline-none focus:border-orange-500 py-1"
                     />
-                    <span className="font-bold text-orange-600">MT</span>
+                    <span className="font-bold text-orange-600 text-sm">MT</span>
                   </div>
                 </div>
               )}
             </div>
           ))}
           {carrinho.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-zinc-300">
-              <ShoppingCart size={64} className="mb-4 opacity-30" />
-              <p className="text-xl md:text-2xl font-bold">Carrinho vazio.</p>
+            <div className="flex flex-col items-center justify-center h-full min-h-[150px] text-zinc-300">
+              <ShoppingCart size={48} className="mb-4 opacity-30" />
+              <p className="text-lg md:text-xl font-bold">Carrinho vazio.</p>
             </div>
           )}
         </div>
 
-        <div className="mt-4 md:mt-6 border-t-2 border-zinc-200 pt-4 md:pt-6 bg-white">
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-end mb-4 md:mb-6 bg-zinc-100 p-4 md:p-6 rounded-2xl border-2 border-zinc-200 gap-2">
-            <span className="text-base md:text-lg font-black text-zinc-500 uppercase">Total a Pagar</span>
-            <span className="text-4xl lg:text-5xl font-black text-zinc-900 leading-none tracking-tight">{totalVenda.toFixed(2)} <span className="text-xl md:text-2xl font-bold text-zinc-500">MT</span></span>
+        <div className="mt-4 border-t-2 border-zinc-200 pt-4 bg-white shrink-0">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-end mb-4 bg-zinc-100 p-4 rounded-2xl border-2 border-zinc-200 gap-2">
+            <span className="text-sm md:text-base font-black text-zinc-500 uppercase">Total a Pagar</span>
+            <span className="text-3xl md:text-4xl font-black text-zinc-900 leading-none tracking-tight">{totalVenda.toFixed(2)} <span className="text-lg md:text-xl font-bold text-zinc-500">MT</span></span>
           </div>
 
-          <div className="flex items-center gap-3 mb-4 px-2">
+          <div className="flex items-center gap-2 mb-3 px-2">
             <input
               type="checkbox"
               id="imprimirRecibo"
               checked={imprimirRecibo}
               onChange={(e) => setImprimirRecibo(e.target.checked)}
-              className="w-5 h-5 md:w-6 md:h-6 text-orange-500 accent-orange-500 rounded border-zinc-300 focus:ring-orange-400 cursor-pointer"
+              className="w-4 h-4 md:w-5 md:h-5 text-orange-500 accent-orange-500 rounded border-zinc-300 focus:ring-orange-400 cursor-pointer"
             />
-            <label htmlFor="imprimirRecibo" className="text-sm md:text-base font-bold text-zinc-700 cursor-pointer select-none">
+            <label htmlFor="imprimirRecibo" className="text-xs md:text-sm font-bold text-zinc-700 cursor-pointer select-none">
               Imprimir recibo após finalizar
             </label>
           </div>
@@ -599,9 +598,9 @@ export function TerminalVendas() {
           <button 
             onClick={finalizarVenda}
             disabled={carrinho.length === 0}
-            className="w-full bg-orange-500 text-white font-black py-4 md:py-6 rounded-2xl flex justify-center items-center gap-3 md:gap-4 hover:bg-orange-600 disabled:opacity-50 disabled:hover:bg-orange-500 transition-all text-xl md:text-2xl shadow-lg active:scale-95"
+            className="w-full bg-orange-500 text-white font-black py-4 rounded-2xl flex justify-center items-center gap-3 hover:bg-orange-600 disabled:opacity-50 disabled:hover:bg-orange-500 transition-all text-lg md:text-xl shadow-lg active:scale-95"
           >
-            <Printer size={28} /> Finalizar Venda
+            <Printer size={24} /> Finalizar Venda
           </button>
         </div>
       </div>
