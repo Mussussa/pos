@@ -33,6 +33,7 @@ export function TerminalVendas() {
   const [filtroSubcategoria, setFiltroSubcategoria] = useState('todas');
   const [pesquisa, setPesquisa] = useState('');
   const [carrinho, setCarrinho] = useState([]);
+  const [imprimirRecibo, setImprimirRecibo] = useState(true);
 
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [paginaHistorico, setPaginaHistorico] = useState(1);
@@ -221,7 +222,9 @@ export function TerminalVendas() {
           await db.produtos.update(item.id, { stock: prodDB.stock - qtd });
         }
       });
-      window.print();
+      if (imprimirRecibo) {
+        window.print();
+      }
       setCarrinho([]);
     } catch (error) {
       alert("Erro ao processar a venda.");
@@ -577,12 +580,25 @@ export function TerminalVendas() {
             <span className="text-5xl font-black text-zinc-900 leading-none tracking-tight">{totalVenda.toFixed(2)} <span className="text-2xl font-bold text-zinc-500">MT</span></span>
           </div>
 
+          <div className="flex items-center gap-3 mb-4 px-2">
+            <input
+              type="checkbox"
+              id="imprimirRecibo"
+              checked={imprimirRecibo}
+              onChange={(e) => setImprimirRecibo(e.target.checked)}
+              className="w-5 h-5 text-orange-500 accent-orange-500 rounded border-zinc-300 focus:ring-orange-400 cursor-pointer"
+            />
+            <label htmlFor="imprimirRecibo" className="text-sm font-bold text-zinc-700 cursor-pointer select-none">
+              Imprimir recibo após finalizar
+            </label>
+          </div>
+
           <button 
             onClick={finalizarVenda}
             disabled={carrinho.length === 0}
             className="w-full bg-orange-500 text-white font-black py-6 rounded-2xl flex justify-center items-center gap-4 hover:bg-orange-600 disabled:opacity-50 disabled:hover:bg-orange-500 transition-all text-2xl shadow-lg active:scale-95"
           >
-            <Printer size={32} /> Finalizar e Imprimir
+            <Printer size={32} /> Finalizar Venda
           </button>
         </div>
       </div>
@@ -631,6 +647,6 @@ export function TerminalVendas() {
         </div>
       </div>
 
-    </div>
+  </div>
   );
 }

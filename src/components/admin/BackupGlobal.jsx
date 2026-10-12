@@ -13,8 +13,8 @@ export function BackupGlobal() {
   useEffect(() => {
     carregarConfiguracoes();
     
-    // Para TESTES: Verifica a cada 10 segundos se já passou 1 minuto desde o último backup
-    const intervalo = setInterval(verificarBackupAutomatico, 10 * 1000); 
+    // Verifica a cada 1 minuto se já está na hora de fazer o backup
+    const intervalo = setInterval(verificarBackupAutomatico, 60 * 1000); 
     return () => clearInterval(intervalo);
   }, []);
 
@@ -155,7 +155,7 @@ export function BackupGlobal() {
 
     const dataUltimo = new Date(config.ultimaData).getTime();
     const agora = Date.now();
-    const tempoLimiteEmMs = 1 * 60 * 1000; // 1 minuto para testes
+    const tempoLimiteEmMs = 30 * 60 * 1000; // Define o limite exato de 30 minutos
 
     if (agora - dataUltimo >= tempoLimiteEmMs) {
       await executarBackup(false);
@@ -231,7 +231,7 @@ export function BackupGlobal() {
           </h3>
           
           <p className="text-zinc-600 text-sm mb-4">
-            O sistema guarda o stock e as vendas na pasta escolhida a cada 1 minuto (Modo de Teste). 
+            O sistema guarda o stock e as vendas na pasta escolhida a cada 30 minutos. 
             Os ficheiros ficam completamente ilegíveis fora do sistema.
           </p>
 
