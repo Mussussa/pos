@@ -12,7 +12,9 @@ export function BackupGlobal() {
 
   useEffect(() => {
     carregarConfiguracoes();
-    const intervalo = setInterval(verificarBackupAutomatico, 5 * 60 * 1000);
+    
+    // Para TESTES: Verifica a cada 10 segundos se já passou 1 minuto desde o último backup
+    const intervalo = setInterval(verificarBackupAutomatico, 10 * 1000); 
     return () => clearInterval(intervalo);
   }, []);
 
@@ -108,11 +110,14 @@ export function BackupGlobal() {
 
       const produtosNormalizados = produtosBrutos.map(p => ({
         id: p.id,
+        codigo: p.codigo || '',
         nome: p.nome,
         categoria: p.categoria,
+        subcategoria: p.subcategoria || '',
         precoCusto: p.precoCusto,
         precoVenda: p.precoVenda,
         stock: p.stock,
+        unidadeMedida: p.unidadeMedida || 'Un.',
         dataCriacao: p.dataCriacao || 'Data não registada'
       }));
 
@@ -134,7 +139,7 @@ export function BackupGlobal() {
 
       await db.sistema.update('config_backup', { ultimaData: dataAtual.toISOString() });
       setUltimoBackup(dataAtual);
-      setStatus(`✅ Backup ${forcarManual ? 'manual' : 'automático'} encriptado e guardado com sucesso!`);
+      setStatus(`✅ Backup ${forcarManual ? 'manual' : 'automático'} encriptado e guardado com sucesso! (${dataAtual.toLocaleTimeString('pt-MZ')})`);
       return true;
 
     } catch (err) {
@@ -150,14 +155,14 @@ export function BackupGlobal() {
 
     const dataUltimo = new Date(config.ultimaData).getTime();
     const agora = Date.now();
-    const quatroHorasEmMs = 4 * 60 * 60 * 1000;
+    const tempoLimiteEmMs = 1 * 60 * 1000; // 1 minuto para testes
 
-    if (agora - dataUltimo >= quatroHorasEmMs) {
+    if (agora - dataUltimo >= tempoLimiteEmMs) {
       await executarBackup(false);
     }
   };
 
-const restaurarBackup = async (e) => {
+  const restaurarBackup = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -174,7 +179,6 @@ const restaurarBackup = async (e) => {
         dynamicTyping: true,
         complete: async (results) => {
           try {
-            // BLINDAGEM: Se formos restaurar vendas, garantimos que o campo 'itens' é sempre um Array
             let dadosProcessados = results.data;
             if (file.name.includes('vendas')) {
               dadosProcessados = results.data.map(venda => {
@@ -227,7 +231,7 @@ const restaurarBackup = async (e) => {
           </h3>
           
           <p className="text-zinc-600 text-sm mb-4">
-            O sistema guarda o stock e as vendas na pasta escolhida a cada 4 horas. 
+            O sistema guarda o stock e as vendas na pasta escolhida a cada 1 minuto (Modo de Teste). 
             Os ficheiros ficam completamente ilegíveis fora do sistema.
           </p>
 

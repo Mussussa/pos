@@ -3,40 +3,71 @@ import { db } from "../../db";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Edit, Trash2, X } from "lucide-react";
 
+const mapaCategorias = {
+  alimentacao: { 
+    prefixo: 'A', 
+    subcategorias: ['graus e massas', 'Laticínios e Charcutaria', 'Bolachas e biscoitos', 'Carnes', 'Mariscos ', 'Snacks e Doces' , 'outros'] 
+  },
+  bebidas: { 
+    prefixo: 'B', 
+    subcategorias: ['Águas', 'Sumos e Néctares', 'Refrigerantes e Energéticas', 'Cervejas', 'Vinhos e Espirituosas' , 'outros'] 
+  },
+  limpeza: { 
+    prefixo: 'L', 
+    subcategorias: ['Limpeza do Lar', 'Tratamento de Roupa', 'Higiene Pessoal', 'Papel e Descartáveis'  , 'outros'] 
+  },
+  diversos: { 
+    prefixo: 'D', 
+    subcategorias: ['Casa e Utilidades', 'Alimentação Animal', 'Papelaria', 'Pilhas e Eletrónica', 'Outros'] 
+  }
+};
+
 export function GestaoProdutos() {
   const produtos = useLiveQuery(() => db.produtos.toArray());
   const [erro, setErro] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("todas");
 
   const [produtoEmEdicao, setProdutoEmEdicao] = useState(null);
+  const [codigoNumerico, setCodigoNumerico] = useState("");
   const [nome, setNome] = useState("");
   const [categoria, setCategoria] = useState("alimentacao");
+  const [subcategoria, setSubcategoria] = useState(mapaCategorias["alimentacao"].subcategorias[0]);
   const [precoCusto, setPrecoCusto] = useState("");
   const [precoVenda, setPrecoVenda] = useState("");
   const [stock, setStock] = useState("");
-  const [unidadeMedida, setUnidadeMedida] = useState("unidade"); // Novo campo adicionado
+  const [unidadeMedida, setUnidadeMedida] = useState("Un."); 
 
   const iniciarEdicao = (produto) => {
     setErro("");
     setProdutoEmEdicao(produto.id);
+    setCodigoNumerico(produto.codigo ? produto.codigo.substring(1) : "");
     setNome(produto.nome);
     setCategoria(produto.categoria);
+    setSubcategoria(produto.subcategoria || mapaCategorias[produto.categoria].subcategorias[0]);
     setPrecoCusto(produto.precoCusto);
     setPrecoVenda(produto.precoVenda);
     setStock(produto.stock);
-    setUnidadeMedida(produto.unidadeMedida || "unidade");
+    setUnidadeMedida(produto.unidadeMedida || "Un.");
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const cancelarEdicao = () => {
     setProdutoEmEdicao(null);
+    setCodigoNumerico("");
     setNome("");
     setCategoria("alimentacao");
+    setSubcategoria(mapaCategorias["alimentacao"].subcategorias[0]);
     setPrecoCusto("");
     setPrecoVenda("");
     setStock("");
-    setUnidadeMedida("unidade");
+    setUnidadeMedida("Un.");
     setErro("");
+  };
+
+  const handleCategoriaChange = (e) => {
+    const novaCategoria = e.target.value;
+    setCategoria(novaCategoria);
+    setSubcategoria(mapaCategorias[novaCategoria].subcategorias[0]);
   };
 
   const guardarProduto = async (e) => {
@@ -44,37 +75,45 @@ export function GestaoProdutos() {
     setErro("");
 
     const pNome = nome.trim();
+    const numLimpo = codigoNumerico.replace(/\D/g, '').substring(0, 3);
+    const pCodigo = mapaCategorias[categoria].prefixo + numLimpo.padStart(3, '0');
     const pVenda = Number(precoVenda);
     const pCusto = Number(precoCusto);
     const pStock = Number(stock);
 
+    if (numLimpo.length === 0) return setErro("O código numérico é obrigatório.");
     if (!pNome) return setErro("O nome é obrigatório.");
     if (pVenda <= 0 || pCusto < 0) return setErro("Preços inválidos.");
     if (pStock < 0) return setErro("O stock não pode ser negativo.");
 
+    const duplicado = produtos.find(p => 
+      (p.nome.toLowerCase() === pNome.toLowerCase() || p.codigo === pCodigo) && p.id !== produtoEmEdicao
+    );
+
+    if (duplicado) {
+      return setErro(`Já existe um artigo com o código ${pCodigo} ou nome "${pNome}".`);
+    }
+
     try {
+      const dadosProduto = {
+        codigo: pCodigo,
+        nome: pNome,
+        categoria,
+        subcategoria,
+        precoVenda: pVenda,
+        precoCusto: pCusto,
+        stock: pStock,
+        unidadeMedida
+      };
+
       if (produtoEmEdicao) {
-        await db.produtos.update(produtoEmEdicao, {
-          nome: pNome,
-          categoria,
-          precoVenda: pVenda,
-          precoCusto: pCusto,
-          stock: pStock,
-          unidadeMedida // Atualiza a unidade de medida
-        });
+        await db.produtos.update(produtoEmEdicao, dadosProduto);
       } else {
-        await db.produtos.add({ 
-          nome: pNome, 
-          categoria, 
-          precoVenda: pVenda, 
-          precoCusto: pCusto, 
-          stock: pStock, 
-          unidadeMedida // Grava a unidade de medida
-        });
+        await db.produtos.add(dadosProduto);
       }
       cancelarEdicao();
     } catch (err) {
-      setErro("Erro ao guardar o produto. Verifica os dados.");
+      setErro("Erro ao guardar o produto. Verifica se há duplicação de registos.");
     }
   };
 
@@ -87,7 +126,7 @@ export function GestaoProdutos() {
   };
 
   const produtosFiltrados = produtos?.filter((p) =>
-    filtroCategoria === "todas" ? true : p.categoria === filtroCategoria,
+    filtroCategoria === "todas" ? true : p.categoria === filtroCategoria
   );
 
   return (
@@ -102,13 +141,27 @@ export function GestaoProdutos() {
         </div>
       )}
 
-      {/* Formulário Controlado (Tema Claro e Laranja Vulpe) */}
       <form
         onSubmit={guardarProduto}
         className={`grid grid-cols-1 md:grid-cols-2 gap-4 p-6 rounded-lg shadow-sm border transition-colors ${
           produtoEmEdicao ? "bg-white border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.1)]" : "bg-white border-zinc-200"
         }`}
       >
+        <div className="flex gap-2">
+          <div className="flex items-center justify-center bg-zinc-100 border border-zinc-300 rounded px-4 font-bold text-zinc-600">
+            {mapaCategorias[categoria].prefixo}
+          </div>
+          <input
+            type="text"
+            placeholder="Cód. (ex: 112)"
+            maxLength="3"
+            required
+            value={codigoNumerico}
+            onChange={(e) => setCodigoNumerico(e.target.value.replace(/\D/g, ''))}
+            className="flex-1 bg-white border border-zinc-300 text-zinc-900 placeholder-zinc-400 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+          />
+        </div>
+
         <input
           type="text"
           placeholder="Nome do artigo"
@@ -121,13 +174,24 @@ export function GestaoProdutos() {
         <select
           required
           value={categoria}
-          onChange={(e) => setCategoria(e.target.value)}
+          onChange={handleCategoriaChange}
           className="bg-white border border-zinc-300 text-zinc-900 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
         >
           <option value="alimentacao">Alimentação</option>
           <option value="bebidas">Bebidas</option>
           <option value="limpeza">Limpeza</option>
           <option value="diversos">Diversos</option>
+        </select>
+
+        <select
+          required
+          value={subcategoria}
+          onChange={(e) => setSubcategoria(e.target.value)}
+          className="bg-white border border-zinc-300 text-zinc-900 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+        >
+          {mapaCategorias[categoria].subcategorias.map(sub => (
+            <option key={sub} value={sub}>{sub}</option>
+          ))}
         </select>
 
         <input
@@ -152,6 +216,7 @@ export function GestaoProdutos() {
         <div className="md:col-span-2 flex gap-2">
           <input
             type="number"
+            step="0.01"
             placeholder="Quantidade em Stock"
             required
             value={stock}
@@ -164,10 +229,10 @@ export function GestaoProdutos() {
             onChange={(e) => setUnidadeMedida(e.target.value)}
             className="w-1/3 md:w-1/4 bg-white border border-zinc-300 text-zinc-900 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
           >
-            <option value="unidade">Un.</option>
-            <option value="kg">Kg</option>
-            <option value="litro">Litro</option>
-            <option value="caixa">Caixa</option>
+            <option value="Un.">Un.</option>
+            <option value="Kg">Kg</option>
+            <option value="Litro">Litro</option>
+            <option value="Caixa">Caixa</option>
           </select>
         </div>
 
@@ -195,7 +260,6 @@ export function GestaoProdutos() {
         </div>
       </form>
 
-      {/* Tabela de Produtos com Filtro */}
       <div className="mt-10">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
           <h3 className="text-xl font-bold text-zinc-800">
@@ -225,12 +289,17 @@ export function GestaoProdutos() {
               className="bg-white border border-zinc-200 p-4 flex flex-col md:flex-row justify-between rounded-lg shadow-sm items-start md:items-center gap-2 hover:border-orange-300 transition-colors"
             >
               <div className="flex items-center gap-3">
-                <span className="font-bold text-zinc-900 text-lg">
-                  {p.nome}
+                <span className="font-mono bg-zinc-100 text-zinc-600 px-2 py-1 rounded text-sm border border-zinc-200">
+                  {p.codigo}
                 </span>
-                <span className="text-xs font-semibold uppercase bg-orange-50 text-orange-600 border border-orange-200 px-2 py-1 rounded">
-                  {p.categoria}
-                </span>
+                <div className="flex flex-col">
+                  <span className="font-bold text-zinc-900 text-lg">
+                    {p.nome}
+                  </span>
+                  <span className="text-xs text-zinc-500 mt-1">
+                    {p.categoria} &gt; {p.subcategoria}
+                  </span>
+                </div>
               </div>
               
               <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end mt-4 md:mt-0 border-t border-zinc-100 pt-4 md:border-0 md:pt-0">

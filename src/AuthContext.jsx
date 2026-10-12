@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { db } from './db';
 import bcrypt from 'bcryptjs';
 
@@ -26,20 +26,26 @@ export function AuthProvider({ children }) {
   const [needsSetup, setNeedsSetup] = useState(true);
   const [loading, setLoading] = useState(true);
 
+  // logout precisa estar memorizado com useCallback para ser usado dentro do useEffect
+  const logout = useCallback(() => {
+    deleteCookie('vulpe_mart_session');
+    setUser(null);
+  }, []);
+
   useEffect(() => {
     verificarSistema();
 
     // O browser destrói o cookie sozinho ao fim de 6h.
-    // Este intervalo serve apenas para avisar a interface visual e mandar o utilizador para o login se a aba ficar aberta.
+    // Este intervalo serve para avisar a interface visual e executar o logout se a aba ficar aberta.
     const intervaloValidade = setInterval(() => {
       if (!getCookie('vulpe_mart_session') && user) {
-        setUser(null);
-        alert("A tua sessão expirou. Faz login novamente.");
+        logout();
+        alert("A tua sessão expirou após 6 horas. Faz login novamente.");
       }
-    }, 60000); // Verifica a cada minuto
+    }, 60000); // Verifica a cada 60 segundos
 
     return () => clearInterval(intervaloValidade);
-  }, [user]);
+  }, [user, logout]);
 
   const verificarSistema = async () => {
     const adminExist = await db.usuarios.where('role').equals('admin').first();
@@ -75,11 +81,6 @@ export function AuthProvider({ children }) {
     // Grava o cookie com expiração matemática exata de 6 horas
     setCookie('vulpe_mart_session', JSON.stringify(sessao), 6);
     setUser(sessao);
-  };
-
-  const logout = () => {
-    deleteCookie('vulpe_mart_session');
-    setUser(null);
   };
 
   if (loading) return <div className="h-screen bg-zinc-950 flex items-center justify-center text-orange-500 font-mono">A iniciar sistema Vulpe Mart...</div>;

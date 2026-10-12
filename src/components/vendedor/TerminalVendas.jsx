@@ -5,15 +5,35 @@ import { ShoppingCart, Printer, Trash2, Plus, Minus, Search, History, X, Downloa
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
+// Novo mapa de categorias com secções melhoradas
+const mapaCategorias = {
+  alimentacao: { 
+    prefixo: 'A', 
+    subcategorias: ['graus e massas', 'Laticínios e Charcutaria', 'Bolachas e biscoitos', 'Carnes', 'Mariscos ', 'Snacks e Doces' , 'outros'] 
+  },
+  bebidas: { 
+    prefixo: 'B', 
+    subcategorias: ['Águas', 'Sumos e Néctares', 'Refrigerantes e Energéticas', 'Cervejas', 'Vinhos e Espirituosas' , 'outros'] 
+  },
+  limpeza: { 
+    prefixo: 'L', 
+    subcategorias: ['Limpeza do Lar', 'Tratamento de Roupa', 'Higiene Pessoal', 'Papel e Descartáveis'  , 'outros'] 
+  },
+  diversos: { 
+    prefixo: 'D', 
+    subcategorias: ['Casa e Utilidades', 'Alimentação Animal', 'Papelaria', 'Pilhas e Eletrónica', 'Outros'] 
+  }
+};
+
 export function TerminalVendas() {
   const produtos = useLiveQuery(() => db.produtos.where('stock').above(0).toArray());
   const vendas = useLiveQuery(() => db.vendas.toArray());
 
   const [filtroCategoria, setFiltroCategoria] = useState('todas');
+  const [filtroSubcategoria, setFiltroSubcategoria] = useState('todas');
   const [pesquisa, setPesquisa] = useState('');
   const [carrinho, setCarrinho] = useState([]);
 
-  // Estados para o Histórico de Vendas
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [paginaHistorico, setPaginaHistorico] = useState(1);
   const itensPorPaginaHistorico = 15;
@@ -26,7 +46,11 @@ export function TerminalVendas() {
     { id: 'diversos', label: 'Diversos' }
   ];
 
-  // 1. Contagem de Vendas
+  const mudarCategoria = (catId) => {
+    setFiltroCategoria(catId);
+    setFiltroSubcategoria('todas'); // Reseta a subcategoria ao mudar a categoria principal
+  };
+
   const contagemVendas = useMemo(() => {
     const contagem = {};
     vendas?.forEach(v => {
@@ -39,22 +63,32 @@ export function TerminalVendas() {
     return contagem;
   }, [vendas]);
 
-  // 2. Vitrine e Filtros
   const produtosVitrine = useMemo(() => {
     if (!produtos) return [];
     let filtrados = produtos;
-    if (filtroCategoria !== 'todas') filtrados = filtrados.filter(p => p.categoria === filtroCategoria);
+    
+    if (filtroCategoria !== 'todas') {
+      filtrados = filtrados.filter(p => p.categoria === filtroCategoria);
+      if (filtroSubcategoria !== 'todas') {
+        filtrados = filtrados.filter(p => p.subcategoria === filtroSubcategoria);
+      }
+    }
+    
     if (pesquisa.trim() !== '') {
       const termo = pesquisa.toLowerCase().trim();
-      filtrados = filtrados.filter(p => p.nome.toLowerCase().includes(termo));
+      filtrados = filtrados.filter(p => 
+        p.nome.toLowerCase().includes(termo) || 
+        (p.codigo && p.codigo.toLowerCase().includes(termo))
+      );
     }
+    
     return filtrados.sort((a, b) => {
       const qtdA = contagemVendas[a.id] || 0;
       const qtdB = contagemVendas[b.id] || 0;
       if (qtdB !== qtdA) return qtdB - qtdA;
       return a.nome.localeCompare(b.nome);
     });
-  }, [produtos, filtroCategoria, pesquisa, contagemVendas]);
+  }, [produtos, filtroCategoria, filtroSubcategoria, pesquisa, contagemVendas]);
 
   const produtosMaisVendidos = useMemo(() => {
     if (!produtos) return [];
@@ -63,7 +97,6 @@ export function TerminalVendas() {
       .slice(0, 5);
   }, [produtos, contagemVendas]);
 
-  // 3. Lógica do Histórico Paginado
   const vendasOrdenadas = useMemo(() => {
     if (!vendas) return [];
     return [...vendas].sort((a, b) => new Date(b.data) - new Date(a.data));
@@ -75,7 +108,6 @@ export function TerminalVendas() {
     return vendasOrdenadas.slice(inicio, inicio + itensPorPaginaHistorico);
   }, [vendasOrdenadas, paginaHistorico]);
 
-  // 4. Funções do Carrinho
   const adicionarAoCarrinho = (produto) => {
     setCarrinho(prev => {
       const existe = prev.find(item => item.id === produto.id);
@@ -121,7 +153,6 @@ export function TerminalVendas() {
     }));
   };
 
-  // NOVA FUNÇÃO: Calcula a quantidade em Kg com base no valor em dinheiro que o cliente quer gastar
   const definirPorValorManual = (id, valorTexto) => {
     if (valorTexto === '') {
       setCarrinho(prev => prev.map(item => item.id === id ? { ...item, quantidade: '' } : item));
@@ -133,10 +164,7 @@ export function TerminalVendas() {
 
     setCarrinho(prev => prev.map(item => {
       if (item.id === id) {
-        // Divide o valor em MT pelo preço do quilo para obter o peso e arredonda a 3 casas decimais (gramas)
         let pesoCalculado = Number((valorMT / item.precoVenda).toFixed(3));
-        
-        // Garante que a quantidade calculada não ultrapassa o stock disponível
         const quantidadeAjustada = Math.min(pesoCalculado, item.stock);
         
         return { ...item, quantidade: quantidadeAjustada };
@@ -178,6 +206,7 @@ export function TerminalVendas() {
       itens: carrinho.map(item => ({
         produtoId: item.id,
         nome: item.nome,
+        codigo: item.codigo || '',
         quantidade: Number(item.quantidade) || 1,
         preco: item.precoVenda
       }))
@@ -200,7 +229,6 @@ export function TerminalVendas() {
     }
   };
 
-  // 5. Função de Exportação PDF do Histórico do Vendedor
   const exportarHistoricoVendedorPDF = () => {
     const doc = new jsPDF();
     doc.setFontSize(20);
@@ -347,12 +375,10 @@ export function TerminalVendas() {
           </div>
         </div>
 
-        {/* Cabeçalho */}
+        {/* Cabeçalho e Filtros (Agora com Subcategorias dinâmicas) */}
         <div className="flex flex-col gap-6 mb-6">
           <div className="flex justify-between items-center">
             <h2 className="text-3xl font-black text-orange-500 uppercase tracking-wider">Terminal POS</h2>
-
-            {/* Botão para abrir o Histórico */}
             <button 
               onClick={() => setMostrarHistorico(true)}
               className="flex items-center gap-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold py-2 px-4 rounded-xl border border-zinc-300 transition-colors shadow-sm"
@@ -361,25 +387,56 @@ export function TerminalVendas() {
             </button>
           </div>
 
-          {/* Cards de Categorias */}
-          <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
-            {categorias.map(cat => {
-              const selecionada = filtroCategoria === cat.id;
-              return (
+          <div className="flex flex-col gap-4">
+            {/* Cards de Categorias Principais */}
+            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+              {categorias.map(cat => {
+                const selecionada = filtroCategoria === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => mudarCategoria(cat.id)}
+                    className={`px-6 py-4 rounded-2xl text-lg font-bold border-2 transition-all shrink-0 shadow-sm ${
+                      selecionada
+                        ? 'bg-orange-500 text-white border-orange-500 shadow-orange-200'
+                        : 'bg-white text-zinc-700 border-zinc-200 hover:border-orange-400 hover:text-orange-600'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Linha de Subcategorias (flex-wrap) visível apenas se houver categoria selecionada */}
+            {filtroCategoria !== 'todas' && mapaCategorias[filtroCategoria] && (
+              <div className="flex flex-wrap gap-2">
                 <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => setFiltroCategoria(cat.id)}
-                  className={`px-6 py-4 rounded-2xl text-lg font-bold border-2 transition-all shrink-0 shadow-sm ${
-                    selecionada
-                      ? 'bg-orange-500 text-white border-orange-500 shadow-orange-200'
-                      : 'bg-white text-zinc-700 border-zinc-200 hover:border-orange-400 hover:text-orange-600'
+                  onClick={() => setFiltroSubcategoria('todas')}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${
+                    filtroSubcategoria === 'todas'
+                      ? 'bg-zinc-800 text-white border-zinc-800'
+                      : 'bg-white text-zinc-600 border-zinc-300 hover:border-zinc-500'
                   }`}
                 >
-                  {cat.label}
+                  Todas as Subcategorias
                 </button>
-              );
-            })}
+                {mapaCategorias[filtroCategoria].subcategorias.map(sub => (
+                  <button
+                    key={sub}
+                    onClick={() => setFiltroSubcategoria(sub)}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${
+                      filtroSubcategoria === sub
+                        ? 'bg-zinc-800 text-white border-zinc-800'
+                        : 'bg-white text-zinc-600 border-zinc-300 hover:border-zinc-500'
+                    }`}
+                  >
+                    {sub}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Barra de Pesquisa */}
@@ -396,7 +453,7 @@ export function TerminalVendas() {
         </div>
 
         {/* Vitrine de Produtos */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-5 overflow-y-auto pr-2 max-h-[60vh] pb-10 custom-scrollbar">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-5 overflow-y-auto pr-2 max-h-[50vh] pb-10 custom-scrollbar">
           {produtosVitrine?.map(p => (
             <button 
               key={p.id}
@@ -404,7 +461,12 @@ export function TerminalVendas() {
               className="bg-white border-2 border-zinc-200 p-5 rounded-2xl shadow-sm hover:border-orange-500 hover:shadow-lg transition-all text-left flex flex-col justify-between min-h-[160px] active:scale-95 group"
             >
               <div>
-                <span className="text-xs text-orange-700 bg-orange-100 px-3 py-1 rounded-md font-bold uppercase">{p.categoria}</span>
+                <div className="flex justify-between items-start">
+                  <span className="text-xs text-orange-700 bg-orange-100 px-3 py-1 rounded-md font-bold uppercase">{p.categoria}</span>
+                  {p.codigo && (
+                    <span className="text-xs text-zinc-500 font-mono bg-zinc-100 px-2 py-1 rounded border border-zinc-200">{p.codigo}</span>
+                  )}
+                </div>
                 <h3 className="font-bold text-zinc-800 text-xl leading-tight mt-4 line-clamp-2 group-hover:text-orange-600 transition-colors">{p.nome}</h3>
               </div>
               <div className="flex justify-between items-end mt-4 w-full">
@@ -482,7 +544,7 @@ export function TerminalVendas() {
                 </div>
               </div>
 
-              {/* NOVO CONTROLO: Venda por Dinheiro (Apenas para produtos a Kg) */}
+              {/* Venda por Dinheiro (Apenas para produtos a Kg) */}
               {item.unidadeMedida?.toLowerCase() === 'kg' && (
                 <div className="flex justify-between items-center mt-2 bg-orange-50 p-2.5 rounded-xl border border-orange-200">
                   <span className="text-sm font-bold text-orange-800">Ou vender por valor:</span>
@@ -491,7 +553,6 @@ export function TerminalVendas() {
                       type="number"
                       step="0.01"
                       placeholder="0.00"
-                      // Calcula quanto dá em dinheiro para apresentar na caixa, se não estiver vazio
                       value={item.quantidade === '' ? '' : Number((item.quantidade * item.precoVenda).toFixed(2))}
                       onChange={(e) => definirPorValorManual(item.id, e.target.value)}
                       className="w-24 text-center text-orange-700 font-black text-xl bg-white rounded-lg border border-orange-300 focus:outline-none focus:border-orange-500 py-1"
