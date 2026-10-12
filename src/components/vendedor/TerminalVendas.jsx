@@ -8,11 +8,11 @@ import 'jspdf-autotable';
 export function TerminalVendas() {
   const produtos = useLiveQuery(() => db.produtos.where('stock').above(0).toArray());
   const vendas = useLiveQuery(() => db.vendas.toArray());
-  
+
   const [filtroCategoria, setFiltroCategoria] = useState('todas');
   const [pesquisa, setPesquisa] = useState('');
   const [carrinho, setCarrinho] = useState([]);
-  
+
   // Estados para o Histórico de Vendas
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [paginaHistorico, setPaginaHistorico] = useState(1);
@@ -63,7 +63,7 @@ export function TerminalVendas() {
       .slice(0, 5);
   }, [produtos, contagemVendas]);
 
-  // 3. Lógica do Histórico Paginado (Preparado para milhares de registos)
+  // 3. Lógica do Histórico Paginado
   const vendasOrdenadas = useMemo(() => {
     if (!vendas) return [];
     return [...vendas].sort((a, b) => new Date(b.data) - new Date(a.data));
@@ -102,11 +102,43 @@ export function TerminalVendas() {
       setCarrinho(prev => prev.map(item => item.id === id ? { ...item, quantidade: '' } : item));
       return;
     }
-    const valorNumerico = parseInt(valorTexto, 10);
-    if (isNaN(valorNumerico)) return;
+    
     setCarrinho(prev => prev.map(item => {
       if (item.id === id) {
-        const quantidadeAjustada = Math.min(Math.max(1, valorNumerico), item.stock);
+        const permiteDecimais = ["kg", "litro"].includes(item.unidadeMedida?.toLowerCase());
+        let valorNumerico = permiteDecimais
+          ? parseFloat(valorTexto.replace(",", "."))
+          : parseInt(valorTexto, 10);
+
+        if (isNaN(valorNumerico)) return item;
+
+        const minVal = permiteDecimais ? 0.01 : 1;
+        const quantidadeAjustada = Math.min(Math.max(minVal, valorNumerico), item.stock);
+
+        return { ...item, quantidade: quantidadeAjustada };
+      }
+      return item;
+    }));
+  };
+
+  // NOVA FUNÇÃO: Calcula a quantidade em Kg com base no valor em dinheiro que o cliente quer gastar
+  const definirPorValorManual = (id, valorTexto) => {
+    if (valorTexto === '') {
+      setCarrinho(prev => prev.map(item => item.id === id ? { ...item, quantidade: '' } : item));
+      return;
+    }
+
+    const valorMT = parseFloat(valorTexto.replace(',', '.'));
+    if (isNaN(valorMT) || valorMT < 0) return;
+
+    setCarrinho(prev => prev.map(item => {
+      if (item.id === id) {
+        // Divide o valor em MT pelo preço do quilo para obter o peso e arredonda a 3 casas decimais (gramas)
+        let pesoCalculado = Number((valorMT / item.precoVenda).toFixed(3));
+        
+        // Garante que a quantidade calculada não ultrapassa o stock disponível
+        const quantidadeAjustada = Math.min(pesoCalculado, item.stock);
+        
         return { ...item, quantidade: quantidadeAjustada };
       }
       return item;
@@ -115,7 +147,7 @@ export function TerminalVendas() {
 
   const validarQuantidadeAoSair = (id) => {
     setCarrinho(prev => prev.map(item => {
-      if (item.id === id && (item.quantidade === '' || item.quantidade < 1)) {
+      if (item.id === id && (item.quantidade === '' || item.quantidade <= 0)) {
         return { ...item, quantidade: 1 };
       }
       return item;
@@ -130,7 +162,7 @@ export function TerminalVendas() {
     const qtd = Number(item.quantidade) || 0;
     return acc + (item.precoVenda * qtd);
   }, 0);
-  
+
   const finalizarVenda = async () => {
     if (carrinho.length === 0) return;
     const lucroTotal = carrinho.reduce((acc, item) => {
@@ -174,7 +206,7 @@ export function TerminalVendas() {
     doc.setFontSize(20);
     doc.setTextColor(249, 115, 22);
     doc.text("VULPE MART", 14, 22);
-    
+
     doc.setFontSize(12);
     doc.setTextColor(50, 50, 50);
     doc.text("Histórico Geral de Vendas (Operador)", 14, 30);
@@ -207,10 +239,8 @@ export function TerminalVendas() {
 
   return (
     <div className="flex flex-col md:flex-row h-full min-h-screen bg-zinc-50 text-zinc-900 font-sans relative">
-      
-      {/* ========================================= */}
+
       {/* MODAL DE HISTÓRICO DE VENDAS */}
-      {/* ========================================= */}
       {mostrarHistorico && (
         <div className="fixed inset-0 z-50 bg-zinc-900/80 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
@@ -230,7 +260,7 @@ export function TerminalVendas() {
                 </button>
               </div>
             </div>
-            
+
             <div className="flex-1 overflow-auto p-6">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-zinc-100 text-zinc-600 sticky top-0 shadow-sm text-sm">
@@ -298,7 +328,7 @@ export function TerminalVendas() {
 
       {/* Esquerda: Vitrine e Filtros */}
       <div className="w-full md:w-3/5 p-6 flex flex-col h-full border-r border-zinc-200 print:hidden">
-        
+
         {/* Letreiro de Giro */}
         <div className="mb-6 bg-white border border-orange-200 rounded-xl p-4 overflow-hidden shadow-sm flex items-center gap-4">
           <span className="bg-orange-500 text-white text-sm font-bold uppercase px-3 py-2 rounded shrink-0 animate-pulse">
@@ -321,7 +351,7 @@ export function TerminalVendas() {
         <div className="flex flex-col gap-6 mb-6">
           <div className="flex justify-between items-center">
             <h2 className="text-3xl font-black text-orange-500 uppercase tracking-wider">Terminal POS</h2>
-            
+
             {/* Botão para abrir o Histórico */}
             <button 
               onClick={() => setMostrarHistorico(true)}
@@ -357,7 +387,7 @@ export function TerminalVendas() {
             <Search className="absolute left-4 top-4 text-zinc-400" size={24} />
             <input 
               type="text"
-              placeholder="Pesquisar artigo pelo nome (Ex: Arroz)..."
+              placeholder="Pesquisar artigo pelo nome ou código..."
               value={pesquisa}
               onChange={(e) => setPesquisa(e.target.value)}
               className="w-full bg-white border-2 border-zinc-300 text-zinc-900 placeholder-zinc-400 pl-14 pr-6 py-4 text-xl rounded-2xl focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 shadow-sm transition-all"
@@ -400,28 +430,30 @@ export function TerminalVendas() {
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
           {carrinho.map(item => (
-            <div key={item.id} className="bg-zinc-50 p-5 rounded-2xl border-2 border-zinc-200 flex flex-col gap-4 hover:border-zinc-300 transition-colors">
+            <div key={item.id} className="bg-zinc-50 p-5 rounded-2xl border-2 border-zinc-200 flex flex-col gap-3 hover:border-zinc-300 transition-colors">
               <div className="flex justify-between items-start">
                 <span className="font-bold text-zinc-900 text-xl leading-tight pr-4">{item.nome}</span>
                 <span className="font-black text-orange-600 text-2xl whitespace-nowrap">{(item.precoVenda * (Number(item.quantidade) || 0)).toFixed(2)} MT</span>
               </div>
-              
+
+              {/* Controlos Clássicos (Quantidade) */}
               <div className="flex justify-between items-center mt-2">
-                <span className="text-lg font-bold text-zinc-500">{item.precoVenda.toFixed(2)} / un</span>
-                
+                <span className="text-lg font-bold text-zinc-500">{item.precoVenda.toFixed(2)} / {item.unidadeMedida || 'un'}</span>
+
                 <div className="flex items-center gap-2 bg-white border-2 border-zinc-200 rounded-xl p-1.5 shadow-sm">
                   <button 
                     type="button"
                     onClick={() => alterarQuantidade(item.id, -1)} 
-                    disabled={Number(item.quantidade) <= 1}
+                    disabled={Number(item.quantidade) <= 0.01}
                     className="text-zinc-600 hover:text-white hover:bg-orange-500 rounded-lg p-2 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-600"
                   >
                     <Minus size={24} strokeWidth={3} />
                   </button>
-                  
+
                   <input
                     type="number"
-                    min="1"
+                    step={["kg", "litro"].includes(item.unidadeMedida?.toLowerCase()) ? "0.01" : "1"}
+                    min={["kg", "litro"].includes(item.unidadeMedida?.toLowerCase()) ? "0.01" : "1"}
                     max={item.stock}
                     value={item.quantidade}
                     onChange={(e) => definirQuantidadeManual(item.id, e.target.value)}
@@ -439,7 +471,7 @@ export function TerminalVendas() {
                   </button>
 
                   <div className="w-px h-8 bg-zinc-300 mx-2"></div>
-                  
+
                   <button 
                     type="button"
                     onClick={() => removerDoCarrinho(item.id)} 
@@ -449,6 +481,25 @@ export function TerminalVendas() {
                   </button>
                 </div>
               </div>
+
+              {/* NOVO CONTROLO: Venda por Dinheiro (Apenas para produtos a Kg) */}
+              {item.unidadeMedida?.toLowerCase() === 'kg' && (
+                <div className="flex justify-between items-center mt-2 bg-orange-50 p-2.5 rounded-xl border border-orange-200">
+                  <span className="text-sm font-bold text-orange-800">Ou vender por valor:</span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      // Calcula quanto dá em dinheiro para apresentar na caixa, se não estiver vazio
+                      value={item.quantidade === '' ? '' : Number((item.quantidade * item.precoVenda).toFixed(2))}
+                      onChange={(e) => definirPorValorManual(item.id, e.target.value)}
+                      className="w-24 text-center text-orange-700 font-black text-xl bg-white rounded-lg border border-orange-300 focus:outline-none focus:border-orange-500 py-1"
+                    />
+                    <span className="font-bold text-orange-600">MT</span>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
           {carrinho.length === 0 && (
@@ -464,7 +515,7 @@ export function TerminalVendas() {
             <span className="text-lg font-black text-zinc-500 uppercase">Total a Pagar</span>
             <span className="text-5xl font-black text-zinc-900 leading-none tracking-tight">{totalVenda.toFixed(2)} <span className="text-2xl font-bold text-zinc-500">MT</span></span>
           </div>
-          
+
           <button 
             onClick={finalizarVenda}
             disabled={carrinho.length === 0}
@@ -481,14 +532,14 @@ export function TerminalVendas() {
           <h2 className="font-bold text-xl uppercase mb-1">VULPE MART</h2>
           <h3 className="font-bold text-sm uppercase mb-1">MERCEARIA E CONVENIÊNCIA</h3>
           <p className="text-xs mb-4">Chimoio, Manica. Contacto: 845773342.</p>
-          
+
           <p className="text-xs text-left mb-4">
             Data: {new Date().toLocaleString('pt-MZ')}<br/>
             Op: Vendedor
           </p>
 
           <div className="border-t border-black border-dashed my-2"></div>
-          
+
           <table className="w-full text-left text-xs mb-2">
             <thead>
               <tr>
@@ -509,7 +560,7 @@ export function TerminalVendas() {
           </table>
 
           <div className="border-t border-black border-dashed my-2"></div>
-          
+
           <div className="flex justify-between font-bold text-base mb-4 mt-2">
             <span>TOTAL MT:</span>
             <span>{totalVenda.toFixed(2)}</span>

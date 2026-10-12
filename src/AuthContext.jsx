@@ -4,6 +4,23 @@ import bcrypt from 'bcryptjs';
 
 export const AuthContext = createContext();
 
+// Funções auxiliares para gerir o cookie
+const setCookie = (name, value, hours) => {
+  const date = new Date();
+  date.setTime(date.getTime() + (hours * 60 * 60 * 1000));
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${date.toUTCString()}; path=/; SameSite=Strict`;
+};
+
+const getCookie = (name) => {
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  if (match) return decodeURIComponent(match[2]);
+  return null;
+};
+
+const deleteCookie = (name) => {
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Strict`;
+};
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [needsSetup, setNeedsSetup] = useState(true);
@@ -11,13 +28,24 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     verificarSistema();
-  }, []);
+
+    // O browser destrói o cookie sozinho ao fim de 6h.
+    // Este intervalo serve apenas para avisar a interface visual e mandar o utilizador para o login se a aba ficar aberta.
+    const intervaloValidade = setInterval(() => {
+      if (!getCookie('vulpe_mart_session') && user) {
+        setUser(null);
+        alert("A tua sessão expirou. Faz login novamente.");
+      }
+    }, 60000); // Verifica a cada minuto
+
+    return () => clearInterval(intervaloValidade);
+  }, [user]);
 
   const verificarSistema = async () => {
     const adminExist = await db.usuarios.where('role').equals('admin').first();
     setNeedsSetup(!adminExist);
 
-    const sessaoGuardada = localStorage.getItem('vulpe_mart_session');
+    const sessaoGuardada = getCookie('vulpe_mart_session');
     if (sessaoGuardada) {
       setUser(JSON.parse(sessaoGuardada));
     }
@@ -43,12 +71,14 @@ export function AuthProvider({ children }) {
     if (!senhaValida) throw new Error('Senha incorreta.');
 
     const sessao = { id: dbUser.id, username: dbUser.username, role: dbUser.role };
-    localStorage.setItem('vulpe_mart_session', JSON.stringify(sessao));
+    
+    // Grava o cookie com expiração matemática exata de 6 horas
+    setCookie('vulpe_mart_session', JSON.stringify(sessao), 6);
     setUser(sessao);
   };
 
   const logout = () => {
-    localStorage.removeItem('vulpe_mart_session');
+    deleteCookie('vulpe_mart_session');
     setUser(null);
   };
 
