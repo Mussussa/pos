@@ -5,33 +5,18 @@ import { CloudLightning, ShieldCheck, DownloadCloud, LogIn, Key, AlertTriangle }
 import { useAuth } from '../../AuthContext';
 
 export function BackupGlobal() {
+  // 1. TODOS OS ESTADOS E HOOKS NO TOPO (Regra de Ouro do React)
   const [status, setStatus] = useState('');
   const [sessao, setSessao] = useState(null);
-  const [isLogin, setIsLogin] = useState(false); // Alterna entre Registo (Admin) e Login normal
-  const { user: currentUser } = useAuth(); // Puxa o utilizador local logado
-
-  // Estados do formulário
+  const [isLogin, setIsLogin] = useState(false);
+  const { user: currentUser } = useAuth();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [nomeLoja, setNomeLoja] = useState('');
   const [chave, setChave] = useState('');
 
-
-  // Bloqueio de Segurança: Se não for admin local, barra o acesso imediatamente
-  if (currentUser?.role !== 'admin') {
-    return (
-      <div className="p-6 bg-zinc-50 min-h-full flex flex-col items-center justify-center font-sans">
-        <div className="bg-red-50 p-8 rounded-lg shadow-sm border border-red-200 text-center">
-          <AlertTriangle size={48} className="text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-red-700 mb-2">Acesso Restrito</h2>
-          <p className="text-red-600">Apenas administradores podem gerir a sincronização com a nuvem.</p>
-        </div>
-      </div>
-    );
-  }
-
+  // Hook 1: Verifica a sessão do Supabase
   useEffect(() => {
-    // Verifica se já há um utilizador logado no Supabase
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSessao(session);
     });
@@ -43,33 +28,29 @@ export function BackupGlobal() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // 2. FUNÇÕES DO SISTEMA
   const gerirAutenticacao = async (e) => {
     e.preventDefault();
     setStatus('A processar...');
 
     try {
       if (isLogin) {
-        // Login normal (Admin ou funcionários criados depois)
         const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
         if (error) throw error;
         setStatus('✅ Login efetuado com sucesso!');
       } else {
-        // 1º Passo: Regista o Administrador no Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.signUp({ 
           email, 
           password: senha 
         });
-        
         if (authError) throw authError;
 
-        // 2º Passo: Chama a função RPC para validar a chave e criar a Loja
         const { error: rpcError } = await supabase.rpc('registar_loja_com_chave', {
           p_nome_loja: nomeLoja,
           p_chave: chave
         });
 
         if (rpcError) {
-          // Se a chave falhar, tentamos apagar o utilizador fantasma (opcional, mas limpo)
           setStatus(`🚨 Erro: ${rpcError.message}`);
           return;
         }
@@ -86,46 +67,20 @@ export function BackupGlobal() {
       setStatus('⚠️ Estás offline. Conecta-te à internet primeiro.');
       return;
     }
-// Dispara automaticamente no exato milésimo de segundo em que a internet volta
-  useEffect(() => {
-    const ativarSincronizacaoAutomatica = () => {
-      // Só tenta sincronizar se existir uma sessão válida
-      if (sessao) {
-        forcarSincronizacao();
-      }
-    };
-
-    window.addEventListener('online', ativarSincronizacaoAutomatica);
-    
-    // Tenta sincronizar automaticamente ao carregar a página se houver rede e sessão
-    if (navigator.onLine && sessao) {
-      ativarSincronizacaoAutomatica();
-    }
-
-    return () => window.removeEventListener('online', ativarSincronizacaoAutomatica);
-  }, [sessao]); // O hook reage quando o utilizador faz login (sessao muda)
-
-  const forcarSincronizacao = async () => {
-    if (!navigator.onLine) {
-      setStatus('⚠️ Estás offline. Conecta-te à internet primeiro.');
-      return;
-    }
     
     setStatus('A sincronizar com a nuvem...');
     
     try {
       // 1. SINCRONIZAR PRODUTOS
-      // Busca no IndexedDB apenas os produtos onde 'sincronizado' é 0, false ou indefinido
       const produtosPendentes = await db.produtos.filter(p => !p.sincronizado).toArray();
       
       if (produtosPendentes.length > 0) {
-        // Prepara os dados para o Supabase (garante que os nomes batem com as colunas lá)
         const payloadProdutos = produtosPendentes.map(p => ({
           codigo: p.codigo,
           nome: p.nome,
           categoria: p.categoria,
           subcategoria: p.subcategoria,
-          precoVenda: p.precoVenda, // Se no Supabase for preco_venda, altera aqui
+          precoVenda: p.precoVenda,
           precoCusto: p.precoCusto,
           stock: p.stock,
           unidadeMedida: p.unidadeMedida
@@ -134,7 +89,6 @@ export function BackupGlobal() {
         const { error: erroProdutos } = await supabase.from('produtos').insert(payloadProdutos);
         if (erroProdutos) throw erroProdutos;
 
-        // DADOS CRÍTICOS: Nunca apagamos, apenas atualizamos a flag local para 1
         await db.transaction('rw', db.produtos, async () => {
           for (const prod of produtosPendentes) {
             await db.produtos.update(prod.id, { sincronizado: 1 });
@@ -170,16 +124,43 @@ export function BackupGlobal() {
       setStatus(`🚨 Erro na comunicação com a nuvem: ${erro.message}`);
     }
   };
-  };
 
   const restaurarDaNuvem = async () => {
     setStatus('A descarregar dados da loja...');
-    // Aqui fazes um SELECT de produtos e vendas do Supabase
-    // E usas db.produtos.bulkPut() para reconstruir o IndexedDB local
     setTimeout(() => setStatus('✅ Base de dados reconstruída com sucesso!'), 1500);
   };
 
-  // --- RENDERIZAÇÃO: SE NÃO ESTIVER LOGADO ---
+  // Hook 2: Dispara automaticamente quando a internet volta (Colocado após a função que utiliza)
+  useEffect(() => {
+    const ativarSincronizacaoAutomatica = () => {
+      if (sessao) {
+        forcarSincronizacao();
+      }
+    };
+
+    window.addEventListener('online', ativarSincronizacaoAutomatica);
+    
+    if (navigator.onLine && sessao) {
+      ativarSincronizacaoAutomatica();
+    }
+
+    return () => window.removeEventListener('online', ativarSincronizacaoAutomatica);
+  }, [sessao]);
+
+
+  // 3. BLOQUEIOS DE SEGURANÇA E RENDERIZAÇÃO (Sempre no final)
+  if (currentUser?.role !== 'admin') {
+    return (
+      <div className="p-6 bg-zinc-50 min-h-full flex flex-col items-center justify-center font-sans">
+        <div className="bg-red-50 p-8 rounded-lg shadow-sm border border-red-200 text-center">
+          <AlertTriangle size={48} className="text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-red-700 mb-2">Acesso Restrito</h2>
+          <p className="text-red-600">Apenas administradores podem gerir a sincronização com a nuvem.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!sessao) {
     return (
       <div className="p-6 bg-zinc-50 min-h-full flex flex-col items-center justify-center font-sans">
@@ -233,7 +214,6 @@ export function BackupGlobal() {
     );
   }
 
-  // --- RENDERIZAÇÃO: SE ESTIVER LOGADO (Painel Premium) ---
   return (
     <div className="p-6 bg-zinc-50 min-h-full text-zinc-900 font-sans">
       <h2 className="text-2xl font-bold mb-6 text-orange-500 uppercase tracking-wider flex items-center gap-2">
@@ -290,5 +270,3 @@ export function BackupGlobal() {
     </div>
   );
 }
-
-// /home/ismael/vulpe/vulpe-markt/bb_comercial/pos_nhapulo/src/components/admin/BackupGlobal.jsx
