@@ -72,18 +72,20 @@ export function BackupGlobal() {
     
     try {
       // 1. SINCRONIZAR PRODUTOS
+// 1. SINCRONIZAR PRODUTOS
       const produtosPendentes = await db.produtos.filter(p => !p.sincronizado).toArray();
       
       if (produtosPendentes.length > 0) {
+        // Ajustado para coincidir exatamente com as colunas do Supabase
         const payloadProdutos = produtosPendentes.map(p => ({
           codigo: p.codigo,
           nome: p.nome,
           categoria: p.categoria,
           subcategoria: p.subcategoria,
-          precoVenda: p.precoVenda,
-          precoCusto: p.precoCusto,
+          preco_venda: p.precoVenda,     // <-- Alterado de precoVenda
+          preco_custo: p.precoCusto,     // <-- Alterado de precoCusto
           stock: p.stock,
-          unidadeMedida: p.unidadeMedida
+          unidade_medida: p.unidadeMedida // <-- Alterado de unidadeMedida
         }));
 
         const { error: erroProdutos } = await supabase.from('produtos').insert(payloadProdutos);
@@ -100,9 +102,10 @@ export function BackupGlobal() {
       const vendasPendentes = await db.vendas.filter(v => !v.sincronizado).toArray();
       
       if (vendasPendentes.length > 0) {
+        // Ajustado para coincidir exatamente com a tabela vendas
         const payloadVendas = vendasPendentes.map(v => ({
-          data: v.data,
-          vendedorId: v.vendedorId,
+          data_venda: v.data,          // <-- Alterado de data
+          vendedor_id: v.vendedorId,   // <-- Alterado de vendedorId
           total: v.total
         }));
 
