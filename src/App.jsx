@@ -1,3 +1,4 @@
+import { useEffect } from "react"; // <-- Adicionado
 import {
   BrowserRouter as Router,
   Routes,
@@ -34,7 +35,6 @@ function Sidebar() {
       : "text-zinc-400 hover:bg-zinc-900/50 hover:text-orange-400 border-r-4 border-transparent";
 
   return (
-    // Adicionada a classe 'group', w-[80px] padrão e hover:w-64 com transition-all
     <aside className="group w-[80px] hover:w-64 h-screen sticky top-0 bg-zinc-950 flex flex-col border-r border-zinc-800 print:hidden shrink-0 transition-all duration-300 ease-in-out z-50 overflow-hidden shadow-2xl">
       
       {/* Cabeçalho do Menu (Logótipo e Perfil) */}
@@ -42,11 +42,9 @@ function Sidebar() {
         <img
           src="/logo_vulpe_instinct.png"
           alt="Vulpe Mart Logótipo"
-          // Logótipo encolhe e cresce com o hover
           className="w-10 group-hover:w-24 h-auto rounded-xl shadow-[0_0_20px_rgba(249,115,22,0.15)] border border-zinc-800 transition-all duration-300 object-cover"
         />
         
-        {/* Textos ocultos que deslizam ao passar o rato */}
         <div className="flex flex-col items-center overflow-hidden transition-all duration-300 max-h-0 opacity-0 group-hover:max-h-20 group-hover:opacity-100 group-hover:mt-4">
           <h1 className="text-xl font-bold text-zinc-100 tracking-wider whitespace-nowrap">
             VULPE <span className="text-orange-500">MART</span>
@@ -194,6 +192,23 @@ function SistemaPrincipal() {
 }
 
 export default function App() {
+  // Lógica de proteção de armazenamento inserida aqui
+  useEffect(() => {
+    const garantirArmazenamentoCritico = async () => {
+      if (navigator.storage && navigator.storage.persist) {
+        const persistido = await navigator.storage.persist();
+        
+        if (persistido) {
+          console.log("✅ Armazenamento crítico ativado: IndexedDB protegido.");
+        } else {
+          console.warn("⚠️ O navegador negou o armazenamento persistente. O IndexedDB ainda pode ser limpo se faltar espaço no dispositivo.");
+        }
+      }
+    };
+
+    garantirArmazenamentoCritico();
+  }, []);
+
   return (
     <ErrorBoundary>
       <AuthProvider>

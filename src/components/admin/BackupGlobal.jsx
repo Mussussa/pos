@@ -86,12 +86,90 @@ export function BackupGlobal() {
       setStatus('⚠️ Estás offline. Conecta-te à internet primeiro.');
       return;
     }
+// Dispara automaticamente no exato milésimo de segundo em que a internet volta
+  useEffect(() => {
+    const ativarSincronizacaoAutomatica = () => {
+      // Só tenta sincronizar se existir uma sessão válida
+      if (sessao) {
+        forcarSincronizacao();
+      }
+    };
+
+    window.addEventListener('online', ativarSincronizacaoAutomatica);
+    
+    // Tenta sincronizar automaticamente ao carregar a página se houver rede e sessão
+    if (navigator.onLine && sessao) {
+      ativarSincronizacaoAutomatica();
+    }
+
+    return () => window.removeEventListener('online', ativarSincronizacaoAutomatica);
+  }, [sessao]); // O hook reage quando o utilizador faz login (sessao muda)
+
+  const forcarSincronizacao = async () => {
+    if (!navigator.onLine) {
+      setStatus('⚠️ Estás offline. Conecta-te à internet primeiro.');
+      return;
+    }
+    
     setStatus('A sincronizar com a nuvem...');
     
-    // Aqui entra a lógica de pegar no db.vendas onde sincronizado === 0 
-    // e fazer o insert no Supabase (como vimos na arquitetura anterior)
-    
-    setTimeout(() => setStatus('✅ Dados sincronizados com a nuvem!'), 1500);
+    try {
+      // 1. SINCRONIZAR PRODUTOS
+      // Busca no IndexedDB apenas os produtos onde 'sincronizado' é 0, false ou indefinido
+      const produtosPendentes = await db.produtos.filter(p => !p.sincronizado).toArray();
+      
+      if (produtosPendentes.length > 0) {
+        // Prepara os dados para o Supabase (garante que os nomes batem com as colunas lá)
+        const payloadProdutos = produtosPendentes.map(p => ({
+          codigo: p.codigo,
+          nome: p.nome,
+          categoria: p.categoria,
+          subcategoria: p.subcategoria,
+          precoVenda: p.precoVenda, // Se no Supabase for preco_venda, altera aqui
+          precoCusto: p.precoCusto,
+          stock: p.stock,
+          unidadeMedida: p.unidadeMedida
+        }));
+
+        const { error: erroProdutos } = await supabase.from('produtos').insert(payloadProdutos);
+        if (erroProdutos) throw erroProdutos;
+
+        // DADOS CRÍTICOS: Nunca apagamos, apenas atualizamos a flag local para 1
+        await db.transaction('rw', db.produtos, async () => {
+          for (const prod of produtosPendentes) {
+            await db.produtos.update(prod.id, { sincronizado: 1 });
+          }
+        });
+      }
+
+      // 2. SINCRONIZAR VENDAS
+      const vendasPendentes = await db.vendas.filter(v => !v.sincronizado).toArray();
+      
+      if (vendasPendentes.length > 0) {
+        const payloadVendas = vendasPendentes.map(v => ({
+          data: v.data,
+          vendedorId: v.vendedorId,
+          total: v.total
+        }));
+
+        const { error: erroVendas } = await supabase.from('vendas').insert(payloadVendas);
+        if (erroVendas) throw erroVendas;
+
+        await db.transaction('rw', db.vendas, async () => {
+          for (const venda of vendasPendentes) {
+            await db.vendas.update(venda.id, { sincronizado: 1 });
+          }
+        });
+      }
+
+      setStatus(produtosPendentes.length === 0 && vendasPendentes.length === 0 
+        ? '✅ Tudo já estava atualizado.' 
+        : `✅ ${produtosPendentes.length} produtos e ${vendasPendentes.length} vendas guardados na nuvem!`);
+        
+    } catch (erro) {
+      setStatus(`🚨 Erro na comunicação com a nuvem: ${erro.message}`);
+    }
+  };
   };
 
   const restaurarDaNuvem = async () => {

@@ -9,3 +9,5 @@ db.version(6).stores({
   vendas: '++id, data, vendedorId, total, sincronizado',
   sistema: 'id' 
 });
+
+///home/ismael/vulpe/vulpe-markt/bb_comercial/pos_nhapulo/src/db.js
