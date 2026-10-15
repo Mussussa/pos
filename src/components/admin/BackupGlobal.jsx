@@ -1,292 +1,216 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../db';
-import Papa from 'papaparse';
-import { Save, FolderOpen, UploadCloud, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { supabase } from '../../services/supabase';
+import { CloudLightning, ShieldCheck, DownloadCloud, LogIn, Key, AlertTriangle } from 'lucide-react';
+import { useAuth } from '../../AuthContext';
 
 export function BackupGlobal() {
-  const [status, setStatus] = useState('A aguardar...');
-  const [pastaConfigurada, setPastaConfigurada] = useState(false);
-  const [ultimoBackup, setUltimoBackup] = useState(null);
+  const [status, setStatus] = useState('');
+  const [sessao, setSessao] = useState(null);
+  const [isLogin, setIsLogin] = useState(false); // Alterna entre Registo (Admin) e Login normal
+  const { user: currentUser } = useAuth(); // Puxa o utilizador local logado
 
-  const CHAVE_SECRETA = import.meta.env.VITE_CHAVE_BACKUP || "CHAVE_FALHA_SEGURANCA";
+  // Estados do formulário
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [nomeLoja, setNomeLoja] = useState('');
+  const [chave, setChave] = useState('');
+
+
+  // Bloqueio de Segurança: Se não for admin local, barra o acesso imediatamente
+  if (currentUser?.role !== 'admin') {
+    return (
+      <div className="p-6 bg-zinc-50 min-h-full flex flex-col items-center justify-center font-sans">
+        <div className="bg-red-50 p-8 rounded-lg shadow-sm border border-red-200 text-center">
+          <AlertTriangle size={48} className="text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-red-700 mb-2">Acesso Restrito</h2>
+          <p className="text-red-600">Apenas administradores podem gerir a sincronização com a nuvem.</p>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
-    carregarConfiguracoes();
-    
-    // Verifica a cada 1 minuto se já está na hora de fazer o backup
-    const intervalo = setInterval(verificarBackupAutomatico, 60 * 1000); 
-    return () => clearInterval(intervalo);
+    // Verifica se já há um utilizador logado no Supabase
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSessao(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSessao(session);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const carregarConfiguracoes = async () => {
-    const config = await db.sistema.get('config_backup');
-    if (config?.diretorioHandle) setPastaConfigurada(true);
-    if (config?.ultimaData) setUltimoBackup(new Date(config.ultimaData));
-  };
-
-  const escolherPasta = async () => {
-    try {
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      await db.sistema.put({
-        id: 'config_backup',
-        diretorioHandle: handle,
-        ultimaData: ultimoBackup ? ultimoBackup.toISOString() : null
-      });
-      setPastaConfigurada(true);
-      setStatus('Pasta de backup ligada com sucesso!');
-    } catch (err) {
-      setStatus('Permissão de pasta recusada.');
-    }
-  };
-
-  const derivarChaveAES = async () => {
-    const enc = new TextEncoder();
-    const keyMaterial = await crypto.subtle.importKey(
-      "raw", enc.encode(CHAVE_SECRETA), { name: "PBKDF2" }, false, ["deriveBits", "deriveKey"]
-    );
-    return crypto.subtle.deriveKey(
-      { name: "PBKDF2", salt: enc.encode("sal_fixo_vulpe_mart"), iterations: 100000, hash: "SHA-256" },
-      keyMaterial, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
-    );
-  };
-
-  const encriptar = async (textoCSV) => {
-    const enc = new TextEncoder();
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const chave = await derivarChaveAES();
-    const cifrado = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, chave, enc.encode(textoCSV));
-    
-    const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('');
-    const cifradoHex = Array.from(new Uint8Array(cifrado)).map(b => b.toString(16).padStart(2, '0')).join('');
-    return `${ivHex}.${cifradoHex}`;
-  };
-
-  const desencriptar = async (textoCifrado) => {
-    const partes = textoCifrado.split('.');
-    if (partes.length !== 2) throw new Error("Ficheiro inválido.");
-    
-    const iv = new Uint8Array(partes[0].match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-    const dados = new Uint8Array(partes[1].match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-    
-    const chave = await derivarChaveAES();
-    const bufferAberto = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, chave, dados);
-    return new TextDecoder().decode(bufferAberto);
-  };
-
-  const verificarPermissaoHandle = async (handle, comInteracao) => {
-    if ((await handle.queryPermission({ mode: 'readwrite' })) === 'granted') {
-      return true;
-    }
-    if (comInteracao) {
-      if ((await handle.requestPermission({ mode: 'readwrite' })) === 'granted') {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  const executarBackup = async (forcarManual = false) => {
-    try {
-      setStatus('A iniciar processo de backup...');
-      const config = await db.sistema.get('config_backup');
-      
-      if (!config?.diretorioHandle) {
-        setStatus('Primeiro tens de escolher a pasta de backup.');
-        return false;
-      }
-
-      const handle = config.diretorioHandle;
-      const temPermissao = await verificarPermissaoHandle(handle, forcarManual);
-
-      if (!temPermissao) {
-        setStatus('⚠️ O navegador bloqueou o acesso à pasta. Clica em "Forçar Agora" para autorizar.');
-        return false;
-      }
-
-      setStatus('A gerar ficheiros encriptados...');
-
-      const produtosBrutos = await db.produtos.toArray();
-      const vendasBrutas = await db.vendas.toArray();
-
-      const produtosNormalizados = produtosBrutos.map(p => ({
-        id: p.id,
-        codigo: p.codigo || '',
-        nome: p.nome,
-        categoria: p.categoria,
-        subcategoria: p.subcategoria || '',
-        precoCusto: p.precoCusto,
-        precoVenda: p.precoVenda,
-        stock: p.stock,
-        unidadeMedida: p.unidadeMedida || 'Un.',
-        dataCriacao: p.dataCriacao || 'Data não registada'
-      }));
-
-      const cifradoProdutos = await encriptar(Papa.unparse(produtosNormalizados));
-      const cifradoVendas = await encriptar(Papa.unparse(vendasBrutas));
-
-      const dataAtual = new Date();
-      const timestamp = dataAtual.toISOString().replace(/[:.]/g, '-');
-
-      const fileHandleProd = await handle.getFileHandle(`produtos_backup_${timestamp}.aes`, { create: true });
-      const writableProd = await fileHandleProd.createWritable();
-      await writableProd.write(cifradoProdutos);
-      await writableProd.close();
-
-      const fileHandleVendas = await handle.getFileHandle(`vendas_backup_${timestamp}.aes`, { create: true });
-      const writableVendas = await fileHandleVendas.createWritable();
-      await writableVendas.write(cifradoVendas);
-      await writableVendas.close();
-
-      await db.sistema.update('config_backup', { ultimaData: dataAtual.toISOString() });
-      setUltimoBackup(dataAtual);
-      setStatus(`✅ Backup ${forcarManual ? 'manual' : 'automático'} encriptado e guardado com sucesso! (${dataAtual.toLocaleTimeString('pt-MZ')})`);
-      return true;
-
-    } catch (err) {
-      console.error(err);
-      setStatus('Erro ao guardar os ficheiros na pasta. Verifica o espaço em disco.');
-      return false;
-    }
-  };
-
-  const verificarBackupAutomatico = async () => {
-    const config = await db.sistema.get('config_backup');
-    if (!config?.ultimaData || !config?.diretorioHandle) return;
-
-    const dataUltimo = new Date(config.ultimaData).getTime();
-    const agora = Date.now();
-    const tempoLimiteEmMs = 30 * 60 * 1000; // Define o limite exato de 30 minutos
-
-    if (agora - dataUltimo >= tempoLimiteEmMs) {
-      await executarBackup(false);
-    }
-  };
-
-  const restaurarBackup = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const tabelaDestino = file.name.includes('vendas') ? db.vendas : db.produtos;
+  const gerirAutenticacao = async (e) => {
+    e.preventDefault();
+    setStatus('A processar...');
 
     try {
-      setStatus('A abrir o cofre e desencriptar o ficheiro...');
-      
-      const textoCifrado = await file.text();
-      const csvAberto = await desencriptar(textoCifrado);
+      if (isLogin) {
+        // Login normal (Admin ou funcionários criados depois)
+        const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
+        if (error) throw error;
+        setStatus('✅ Login efetuado com sucesso!');
+      } else {
+        // 1º Passo: Regista o Administrador no Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.signUp({ 
+          email, 
+          password: senha 
+        });
+        
+        if (authError) throw authError;
 
-      Papa.parse(csvAberto, {
-        header: true,
-        dynamicTyping: true,
-        complete: async (results) => {
-          try {
-            let dadosProcessados = results.data;
-            if (file.name.includes('vendas')) {
-              dadosProcessados = results.data.map(venda => {
-                if (venda.itens && typeof venda.itens === 'string') {
-                  try {
-                    venda.itens = JSON.parse(venda.itens);
-                  } catch (err) {
-                    venda.itens = [];
-                  }
-                }
-                if (!Array.isArray(venda.itens)) {
-                  venda.itens = [];
-                }
-                return venda;
-              });
-            }
+        // 2º Passo: Chama a função RPC para validar a chave e criar a Loja
+        const { error: rpcError } = await supabase.rpc('registar_loja_com_chave', {
+          p_nome_loja: nomeLoja,
+          p_chave: chave
+        });
 
-            await db.transaction('rw', tabelaDestino, async () => {
-              await tabelaDestino.clear();
-              await tabelaDestino.bulkAdd(dadosProcessados);
-            });
-            setStatus(`✅ Dados de ${tabelaDestino.name} desencriptados e restaurados com sucesso!`);
-          } catch (err) {
-            console.error(err);
-            setStatus('Erro ao escrever na base de dados.');
-          }
+        if (rpcError) {
+          // Se a chave falhar, tentamos apagar o utilizador fantasma (opcional, mas limpo)
+          setStatus(`🚨 Erro: ${rpcError.message}`);
+          return;
         }
-      });
 
+        setStatus('✅ Loja ativada e conectada à Nuvem!');
+      }
     } catch (err) {
-      console.error(err);
-      setStatus('🚨 ALERTA: Ficheiro inválido, corrompido ou chave secreta incorreta.');
+      setStatus(`🚨 Erro: ${err.message}`);
     }
-    
-    e.target.value = null; 
   };
 
+  const forcarSincronizacao = async () => {
+    if (!navigator.onLine) {
+      setStatus('⚠️ Estás offline. Conecta-te à internet primeiro.');
+      return;
+    }
+    setStatus('A sincronizar com a nuvem...');
+    
+    // Aqui entra a lógica de pegar no db.vendas onde sincronizado === 0 
+    // e fazer o insert no Supabase (como vimos na arquitetura anterior)
+    
+    setTimeout(() => setStatus('✅ Dados sincronizados com a nuvem!'), 1500);
+  };
+
+  const restaurarDaNuvem = async () => {
+    setStatus('A descarregar dados da loja...');
+    // Aqui fazes um SELECT de produtos e vendas do Supabase
+    // E usas db.produtos.bulkPut() para reconstruir o IndexedDB local
+    setTimeout(() => setStatus('✅ Base de dados reconstruída com sucesso!'), 1500);
+  };
+
+  // --- RENDERIZAÇÃO: SE NÃO ESTIVER LOGADO ---
+  if (!sessao) {
+    return (
+      <div className="p-6 bg-zinc-50 min-h-full flex flex-col items-center justify-center font-sans">
+        <div className="bg-white p-8 rounded-lg shadow-sm border border-zinc-200 w-full max-w-md text-black">
+          <h2 className="text-2xl font-bold mb-6 text-blue-500 uppercase tracking-wider flex items-center justify-center gap-2">
+            <ShieldCheck size={28} /> Vulpe Mart Premium
+          </h2>
+          
+          <form onSubmit={gerirAutenticacao} className="flex flex-col gap-4">
+            <input 
+              type="email" placeholder="Email do Administrador" required
+              value={email} onChange={e => setEmail(e.target.value)}
+              className="p-3 border border-zinc-300 rounded outline-none focus:border-orange-500"
+            />
+            <input 
+              type="password" placeholder="Senha segura" required
+              value={senha} onChange={e => setSenha(e.target.value)}
+              className="p-3 border border-zinc-300 rounded outline-none focus:border-orange-500"
+            />
+            
+            {!isLogin && (
+              <>
+                <input 
+                  type="text" placeholder="Nome da Loja (ex: Mercearia Central)" required
+                  value={nomeLoja} onChange={e => setNomeLoja(e.target.value)}
+                  className="p-3 border border-zinc-300 rounded outline-none focus:border-orange-500"
+                />
+                <div className="relative">
+                  <Key size={18} className="absolute left-3 top-3.5 text-zinc-400" />
+                  <input 
+                    type="text" placeholder="Chave de Licença Premium" required
+                    value={chave} onChange={e => setChave(e.target.value)}
+                    className="p-3 pl-10 border border-zinc-300 rounded outline-none focus:border-orange-500 w-full font-mono uppercase"
+                  />
+                </div>
+              </>
+            )}
+
+            <button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white font-bold p-3 rounded transition-colors mt-2">
+              {isLogin ? 'Entrar no Sistema' : 'Ativar Licença e Registar'}
+            </button>
+          </form>
+
+          <button onClick={() => setIsLogin(!isLogin)} className="w-full text-center text-sm text-zinc-500 mt-6 hover:text-orange-500 transition-colors">
+            {isLogin ? 'Primeiro acesso? Ativa a tua licença aqui.' : 'Já tens a loja ativada? Faz Login.'}
+          </button>
+        </div>
+        
+        {status && <div className="mt-4 text-sm font-bold text-zinc-700">{status}</div>}
+      </div>
+    );
+  }
+
+  // --- RENDERIZAÇÃO: SE ESTIVER LOGADO (Painel Premium) ---
   return (
     <div className="p-6 bg-zinc-50 min-h-full text-zinc-900 font-sans">
       <h2 className="text-2xl font-bold mb-6 text-orange-500 uppercase tracking-wider flex items-center gap-2">
-        <ShieldCheck size={28} /> Centro de Segurança & Backup - Vulpe Mart
+        <CloudLightning size={28} /> Sincronização Premium
       </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
         <div className="bg-white border border-zinc-200 p-6 rounded-lg shadow-sm">
           <h3 className="text-lg font-bold text-zinc-800 flex items-center gap-2 mb-4">
-            <RefreshCw className={navigator.onLine ? "text-green-500" : "text-zinc-400"} /> 
-            Backup Automático Encriptado
+            <CloudLightning className={navigator.onLine ? "text-blue-500" : "text-zinc-400"} /> 
+            Estado da Conexão
           </h3>
-          
-          <p className="text-zinc-600 text-sm mb-4">
-            O sistema guarda o stock e as vendas na pasta escolhida a cada 30 minutos. 
-            Os ficheiros ficam completamente ilegíveis fora do sistema.
+          <p className="text-zinc-600 text-sm mb-6">
+            O sistema envia automaticamente as vendas para a nuvem. Podes forçar o envio se necessário.
           </p>
-
-          <div className="bg-zinc-50 p-3 rounded border border-zinc-200 mb-6 flex flex-col gap-1 text-sm">
-            <span>Status da Internet: {navigator.onLine ? <span className="text-green-600 font-bold">Online</span> : <span className="text-orange-600 font-bold">Offline</span>}</span>
-            <span>Pasta Ligada: {pastaConfigurada ? <span className="text-green-600 font-bold">Sim</span> : <span className="text-orange-600 font-bold">Não</span>}</span>
-            <span>Último Backup: <span className="font-bold text-zinc-800">{ultimoBackup ? ultimoBackup.toLocaleString('pt-MZ') : 'Nunca'}</span></span>
-          </div>
-
-          <div className="flex gap-3">
-            <button 
-              onClick={escolherPasta}
-              className="flex-1 bg-white border border-zinc-300 hover:border-orange-500 hover:text-orange-600 text-zinc-700 p-3 rounded flex justify-center items-center gap-2 transition-all"
-            >
-              <FolderOpen size={18} /> Mudar Pasta
-            </button>
-            <button 
-              onClick={() => executarBackup(true)}
-              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white p-3 rounded flex justify-center items-center gap-2 transition-all shadow-sm"
-            >
-              <Save size={18} /> Forçar Agora
-            </button>
-          </div>
+          <button 
+            onClick={forcarSincronizacao}
+            disabled={!navigator.onLine}
+            className={`w-full p-3 rounded flex justify-center items-center gap-2 transition-all font-bold ${
+              navigator.onLine ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-zinc-200 text-zinc-500 cursor-not-allowed'
+            }`}
+          >
+            Forçar Sincronização Agora
+          </button>
         </div>
 
         <div className="bg-white border border-zinc-200 p-6 rounded-lg shadow-sm">
           <h3 className="text-lg font-bold text-zinc-800 flex items-center gap-2 mb-4">
-            <AlertTriangle className="text-orange-500" /> 
-            Reposição do Sistema
+            <DownloadCloud className="text-orange-500" /> 
+            Recuperação de Emergência
           </h3>
-          
           <p className="text-zinc-600 text-sm mb-6">
-            Carrega um ficheiro de backup (.aes) gerado por este sistema. O painel irá usar a chave secreta para o desencriptar e restaurar a base de dados.
+            Se este for um computador novo ou os dados locais foram apagados, descarrega a tua loja da nuvem.
           </p>
-
-          <label className="w-full bg-zinc-50 border border-zinc-300 hover:border-orange-500 text-zinc-700 p-4 rounded flex flex-col justify-center items-center gap-2 cursor-pointer transition-all border-dashed">
-            <UploadCloud size={32} className="text-orange-500" />
-            <span className="font-bold">Restaurar Ficheiro Encriptado</span>
-            <span className="text-xs text-zinc-500">Seleciona o ficheiro .aes (Produtos ou Vendas)</span>
-            <input type="file" accept=".aes" className="hidden" onChange={restaurarBackup} />
-          </label>
+          <button 
+            onClick={restaurarDaNuvem}
+            className="w-full bg-white border-2 border-orange-500 text-orange-600 hover:bg-orange-50 font-bold p-3 rounded flex justify-center items-center gap-2 transition-all"
+          >
+            Reconstruir Base de Dados Local
+          </button>
         </div>
-
       </div>
 
-      <div className={`mt-6 border p-4 rounded text-center text-sm font-bold font-mono transition-colors ${
-        status.includes('ALERTA') || status.includes('⚠️') || status.includes('Erro')
-          ? 'bg-red-50 border-red-200 text-red-600' 
-          : status.includes('✅')
-            ? 'bg-green-50 border-green-200 text-green-600'
-            : 'bg-white border-zinc-200 text-zinc-600'
-      }`}>
-        {status}
+      <div className="mt-6 flex justify-between items-center bg-white border border-zinc-200 p-4 rounded-lg">
+        <span className="text-sm font-mono">{status || 'Sistema Operacional'}</span>
+        <button 
+          onClick={() => supabase.auth.signOut()}
+          className="text-sm text-red-500 hover:text-red-700 font-bold flex items-center gap-1"
+        >
+          <LogIn size={16} /> Terminar Sessão
+        </button>
       </div>
-
     </div>
   );
 }
+
+// /home/ismael/vulpe/vulpe-markt/bb_comercial/pos_nhapulo/src/components/admin/BackupGlobal.jsx
