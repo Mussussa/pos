@@ -78,6 +78,7 @@ export function BackupGlobal() {
       if (produtosPendentes.length > 0) {
         // Ajustado para coincidir exatamente com as colunas do Supabase
         const payloadProdutos = produtosPendentes.map(p => ({
+          loja_id: loja.id,
           codigo: p.codigo,
           nome: p.nome,
           categoria: p.categoria,
@@ -104,6 +105,7 @@ export function BackupGlobal() {
       if (vendasPendentes.length > 0) {
         // Ajustado para coincidir exatamente com a tabela vendas
         const payloadVendas = vendasPendentes.map(v => ({
+          loja_id: loja.id,
           data_venda: v.data,          // <-- Alterado de data
           vendedor_id: v.vendedorId,   // <-- Alterado de vendedorId
           total: v.total
