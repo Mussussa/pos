@@ -16,46 +16,13 @@ export function BackupGlobal() {
   const [nomeLoja, setNomeLoja] = useState('');
   const [chave, setChave] = useState('');
 
-  // 🔍 FUNÇÃO DE AUDITORIA
-  const auditarBancos = async (contexto = 'Auditoria') => {
-    console.group(`🔍 [${contexto}] Verificação de Dados (Local vs Nuvem)`);
-    try {
-      const configLocal = await db.sistema.get('config_loja');
-      const produtosLocais = await db.produtos.toArray();
-      const vendasLocais = await db.vendas.toArray();
-
-      console.log('📦 [DEXIE LOCAL] config_loja:', configLocal || '⚠️ Não configurado');
-      console.log(`📦 [DEXIE LOCAL] Produtos (${produtosLocais.length}):`, produtosLocais);
-      console.log(`📦 [DEXIE LOCAL] Vendas (${vendasLocais.length}):`, vendasLocais);
-
-      if (navigator.onLine) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: lojasNuvem } = await supabase.from('lojas').select('*').eq('owner_id', user.id);
-          const lojaId = configLocal?.loja_id || lojasNuvem?.[0]?.id;
-          
-          if (lojaId) {
-            const { data: prodNuvem } = await supabase.from('produtos').select('*').eq('loja_id', lojaId);
-            console.log(`☁️ [SUPABASE NUVEM] Produtos (${prodNuvem?.length || 0}):`, prodNuvem);
-
-            const { data: vendasNuvem } = await supabase.from('vendas').select('*').eq('loja_id', lojaId);
-            console.log(`☁️ [SUPABASE NUVEM] Vendas (${vendasNuvem?.length || 0}):`, vendasNuvem);
-          }
-        }
-      }
-    } catch (err) {
-      console.error('🚨 Erro auditoria:', err);
-    }
-    console.groupEnd();
-  };
-
-  // 1. GESTÃO DE SESSÃO (Corre apenas 1 vez ao montar o componente - Sem Loop Infinito)
+  // 1. GESTÃO DE SESSÃO
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSessao(session);
       if (session) {
         obterOuRecuperarLoja(session.user.id).then(lojaId => {
-          if (lojaId) executarSincronizacaoSilenciosa(lojaId); // Dispara ao abrir a app
+          if (lojaId) executarSincronizacaoSilenciosa(lojaId); 
         });
       }
     });
@@ -64,7 +31,7 @@ export function BackupGlobal() {
       setSessao(session);
       if (session) {
         obterOuRecuperarLoja(session.user.id).then(lojaId => {
-          if (lojaId) executarSincronizacaoSilenciosa(lojaId); // Dispara no login
+          if (lojaId) executarSincronizacaoSilenciosa(lojaId); 
         });
       } else {
         setLojaAtual(null);
@@ -72,12 +39,11 @@ export function BackupGlobal() {
     });
 
     return () => subscription.unsubscribe();
-  }, []); // <--- O SEGREDO ESTÁ AQUI: array vazio impede o congelamento.
+  }, []); 
 
-  // 1.5. DETETOR DE INTERNET SEGURO EM BACKGROUND
+  // 1.5. DETETOR DE INTERNET EM BACKGROUND
   useEffect(() => {
     const aoFicarOnline = async () => {
-      console.log('🌐 Internet detetada! A sincronizar em background...');
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.id) {
         const lojaId = await obterOuRecuperarLoja(session.user.id);
@@ -87,42 +53,35 @@ export function BackupGlobal() {
 
     window.addEventListener('online', aoFicarOnline);
     return () => window.removeEventListener('online', aoFicarOnline);
-  }, []); // <--- Array vazio aqui também.
+  }, []); 
 
   const obterOuRecuperarLoja = async (userId) => {
     try {
       const configLocal = await db.sistema.get('config_loja');
       if (configLocal?.loja_id) {
-        console.log('✅ [obterOuRecuperarLoja] Loja encontrada no Dexie local:', configLocal);
         setLojaAtual({ id: configLocal.loja_id, nome: configLocal.nome_loja });
         return configLocal.loja_id;
       }
 
       if (navigator.onLine && userId) {
-        console.log('🔄 [obterOuRecuperarLoja] A procurar loja no Supabase para owner_id:', userId);
         const { data: lojaNuvem, error } = await supabase
           .from('lojas')
           .select('id, nome')
           .eq('owner_id', userId)
           .maybeSingle();
 
-        if (error) {
-          console.error('🚨 Erro ao buscar loja no Supabase:', error);
-        }
-
-        if (lojaNuvem) {
+        if (!error && lojaNuvem) {
           await db.sistema.put({
             id: 'config_loja',
             loja_id: lojaNuvem.id,
             nome_loja: lojaNuvem.nome
           });
-          console.log('✅ [obterOuRecuperarLoja] Loja recuperada da nuvem e salva no Dexie:', lojaNuvem);
           setLojaAtual(lojaNuvem);
           return lojaNuvem.id;
         }
       }
     } catch (err) {
-      console.error('Erro identificar loja:', err);
+      // Falha silenciosa para não interromper a experiência do utilizador
     }
     return null;
   };
@@ -135,25 +94,20 @@ export function BackupGlobal() {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
         if (error) throw error;
         const lojaId = await obterOuRecuperarLoja(data.user.id);
-        await auditarBancos('Pós-Login');
         if (!lojaId) return setStatus('⚠️ Conta autenticada, mas nenhuma loja encontrada.');
         setStatus('✅ Login efetuado!');
       } else {
-        console.log('🚀 [Registo] A criar conta no Supabase Auth...');
-        const { data: authData, error: authError } = await supabase.auth.signUp({ email, password: senha });
+        const { error: authError } = await supabase.auth.signUp({ email, password: senha });
         if (authError) throw authError;
 
-        console.log('🔑 [Registo] Conta criada:', authData?.user?.id, 'A validar chave RPC...');
         const { data: rpcData, error: rpcError } = await supabase.rpc('registar_loja_com_chave', {
           p_nome_loja: nomeLoja, p_chave: chave
         });
         
-        console.log('📡 [Registo] Resposta do RPC registar_loja_com_chave:', { rpcData, rpcError });
-        if (rpcError) return setStatus(`🚨 Erro licença: ${rpcError.message}`);
+        if (rpcError) return setStatus(`🚨 Erro na licença: ${rpcError.message}`);
 
         await db.sistema.put({ id: 'config_loja', loja_id: rpcData.loja_id, nome_loja: nomeLoja });
         setLojaAtual({ id: rpcData.loja_id, nome: nomeLoja });
-        await auditarBancos('Pós-Registo');
         setStatus('✅ Loja ativada e conectada!');
       }
     } catch (err) {
@@ -161,7 +115,7 @@ export function BackupGlobal() {
     }
   };
 
-  // 2. MOTOR DE SINCRONIZAÇÃO (Roda sem o utilizador ver)
+  // 2. MOTOR DE SINCRONIZAÇÃO 
   const executarSincronizacaoSilenciosa = async (lojaIdForcada = null) => {
     if (!navigator.onLine) return;
 
@@ -194,7 +148,6 @@ export function BackupGlobal() {
       const vendasPendentes = await db.vendas.filter(v => !v.sincronizado).toArray();
       if (vendasPendentes.length > 0) {
         const payloadVendas = vendasPendentes.map(v => {
-          // Extrai o valor real e protege contra nulos
           let valorCalculado = Number(v.total ?? v.valor ?? v.precoTotal ?? v.subtotal ?? v.valor_total ?? 0);
           if (isNaN(valorCalculado) || valorCalculado === null || valorCalculado === undefined) {
              valorCalculado = 0;
@@ -219,18 +172,15 @@ export function BackupGlobal() {
         }
       }
     } catch (err) {
-      console.error('Erro sincronização background:', err);
       throw err; 
     }
   };
 
-  // Botão manual para forçar (usa o mesmo motor)
   const forcarSincronizacao = async () => {
     if (!navigator.onLine) return setStatus('⚠️ Estás offline.');
     setStatus('A sincronizar com a nuvem...');
     try {
         await executarSincronizacaoSilenciosa();
-        await auditarBancos('Depois da Sincronização');
         setStatus('✅ Sincronização concluída com sucesso!');
     } catch (err) {
         setStatus(`🚨 Erro: ${err.message}`);
@@ -271,7 +221,6 @@ export function BackupGlobal() {
           })));
         }
       });
-      await auditarBancos('Pós-Restauro da Nuvem');
       setStatus(`✅ Base reconstruída!`);
     } catch (err) {
       setStatus(`🚨 Erro: ${err.message}`);
@@ -329,7 +278,6 @@ export function BackupGlobal() {
         </h2>
         <div className="flex items-center gap-2">
           {lojaAtual && <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-xs font-bold uppercase">Loja: {lojaAtual.nome}</span>}
-          <button onClick={() => auditarBancos('Auditoria')} className="bg-zinc-800 text-white px-3 py-1 rounded text-xs font-mono">Ver Logs</button>
         </div>
       </div>
 
