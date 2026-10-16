@@ -199,7 +199,7 @@ export default function App() {
         const persistido = await navigator.storage.persist();
         
         if (persistido) {
-          console.log("✅ Armazenamento crítico ativado: IndexedDB protegido.");
+          console.log("✅ DB");
         } else {
           console.warn("⚠️ O navegador negou o armazenamento persistente. O IndexedDB ainda pode ser limpo se faltar espaço no dispositivo.");
         }
