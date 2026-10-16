@@ -174,6 +174,10 @@ export function TerminalVendas() {
     });
   };
 
+
+  const perfilLoja = useLiveQuery(() => db.sistema.get('perfil_loja'));
+
+
   const alterarQuantidade = (id, delta) => {
     setCarrinho((prev) =>
       prev.map((item) => {
@@ -849,14 +853,20 @@ const exportarHistoricoVendedorPDF = () => {
         </div>
       </div>
 
-      {/* Recibo Térmico de Impressão */}
+{/* Recibo Térmico de Impressão */}
       <div className="hidden print:block absolute top-0 left-0 bg-white text-black p-4 font-mono w-[80mm] text-sm mx-auto">
         <div className="text-center">
-          <h2 className="font-bold text-xl uppercase mb-1">VULPE MART</h2>
+          <h2 className="font-bold text-xl uppercase mb-1">
+            {perfilLoja?.nome_loja || "VULPE MART"}
+          </h2>
           <h3 className="font-bold text-sm uppercase mb-1">
             MERCEARIA E CONVENIÊNCIA
           </h3>
-          <p className="text-xs mb-4">Chimoio, Manica. Contacto: 845773342.</p>
+          <p className="text-xs mb-4">
+            {perfilLoja?.endereco || "Chimoio, Manica"}. 
+            <br />
+            Contacto: {perfilLoja?.telefone || "845773342"}
+          </p>
 
           <p className="text-xs text-left mb-4">
             Data: {new Date().toLocaleString("pt-MZ")}
@@ -901,7 +911,10 @@ const exportarHistoricoVendedorPDF = () => {
             <span>{totalVenda.toFixed(2)}</span>
           </div>
 
-          <p className="text-xs text-center mt-8">Obrigado pela preferência!</p>
+          <p className="text-[10px] text-center mt-8 text-gray-800">Obrigado pela preferência!</p>
+          <p className="text-[8px] text-center mt-1 text-gray-500 uppercase tracking-widest">
+            Software by Vulpe Instinct
+          </p>
         </div>
       </div>
     </div>

@@ -3,8 +3,7 @@ import { db } from '../../db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import bcrypt from 'bcryptjs';
 import { useAuth } from '../../AuthContext';
-import { UserPlus, Trash2, Shield, User, Store, Save } from 'lucide-react';
-
+import { UserPlus, Trash2, Shield, User, Store, Save, Users } from 'lucide-react';
 export function GestaoUsuarios() {
   const { user: currentUser } = useAuth();
   
