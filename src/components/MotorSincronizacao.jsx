@@ -84,6 +84,7 @@ export function MotorSincronizacao() {
     // De forma redundante, tenta enviar de 5 em 5 minutos silenciosamente se houver internet
     const intervalo = setInterval(executarSincronizacaoSilenciosa, 5 * 60 * 1000);
 
+    
     // Tenta correr uma vez logo que a aplicação abre
     executarSincronizacaoSilenciosa();
 
@@ -92,6 +93,7 @@ export function MotorSincronizacao() {
       clearInterval(intervalo);
     };
   }, []);
+
 
   // Este componente não tem ecrã, é invisível na interface!
   return null;
