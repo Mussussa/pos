@@ -1,21 +1,21 @@
 import { useState } from "react";
 import { db } from "../../db";
-import { supabase } from "../../services/supabase"; // Importação do Supabase
+import { supabase } from "../../services/supabase"; // Importação crucial para apagar na nuvem
 import { useLiveQuery } from "dexie-react-hooks";
 import { Edit, Trash2, X } from "lucide-react";
 
 const mapaCategorias = {
   alimentacao: { 
     prefixo: 'A', 
-    subcategorias: ['graus e massas', 'Laticínios e Charcutaria', 'Bolachas e biscoitos', 'Carnes', 'Mariscos ', 'Snacks e Doces' , 'outros'] 
+    subcategorias: ['graus e massas', 'Laticínios e Charcutaria', 'Bolachas e biscoitos', 'Carnes', 'Mariscos', 'Snacks e Doces', 'outros'] 
   },
   bebidas: { 
     prefixo: 'B', 
-    subcategorias: ['Águas', 'Sumos e Néctares', 'Refrigerantes e Energéticas', 'Cervejas', 'Vinhos e Espirituosas' , 'outros'] 
+    subcategorias: ['Águas', 'Sumos e Néctares', 'Refrigerantes e Energéticas', 'Cervejas', 'Vinhos e Espirituosas', 'outros'] 
   },
   limpeza: { 
     prefixo: 'L', 
-    subcategorias: ['Limpeza do Lar', 'Tratamento de Roupa', 'Higiene Pessoal', 'Papel e Descartáveis'  , 'outros'] 
+    subcategorias: ['Limpeza do Lar', 'Tratamento de Roupa', 'Higiene Pessoal', 'Papel e Descartáveis', 'outros'] 
   },
   diversos: { 
     prefixo: 'D', 
@@ -105,7 +105,7 @@ export function GestaoProdutos() {
         precoCusto: pCusto,
         stock: pStock,
         unidadeMedida,
-        sincronizado: 0 // FALHA 1 CORRIGIDA: Garante a marcação para envio
+        sincronizado: 0 // Marca sempre como não sincronizado inicialmente
       };
 
       let idLocalAtual = produtoEmEdicao;
@@ -138,7 +138,7 @@ export function GestaoProdutos() {
             .from('produtos')
             .upsert([payloadNuvem], { onConflict: 'loja_id, codigo' });
 
-          // Se a nuvem confirmou a receção, marca localmente como sincronizado
+          // Se a nuvem confirmou a receção, atualiza a flag localmente
           if (!error) {
             await db.produtos.update(idLocalAtual, { sincronizado: 1 });
           }
@@ -149,31 +149,34 @@ export function GestaoProdutos() {
     }
   };
 
+  // A CORREÇÃO PRINCIPAL ESTÁ AQUI: Apaga na Nuvem
   const apagarProduto = async (id) => {
-    const confirmar = window.confirm("Tens a certeza que queres apagar este artigo? A ação será definitiva na nuvem.");
+    const confirmar = window.confirm("Tens a certeza? A ação será definitiva na nuvem.");
     if (!confirmar) return;
 
     try {
-      // 1. Recolhe os dados do produto ANTES de o apagar localmente
+      // 1. Guarda os dados do produto ANTES de o apagar localmente
       const produtoParaApagar = await db.produtos.get(id);
 
-      // 2. Apaga localmente
+      // 2. Apaga localmente no Dexie
       await db.produtos.delete(id);
       if (produtoEmEdicao === id) cancelarEdicao();
 
-      // 3. FALHA 2 CORRIGIDA: Apaga na nuvem imediatamente para evitar o efeito Zombie
+      // 3. APAGA NO SUPABASE (Mata o Zombie)
       if (navigator.onLine && produtoParaApagar) {
         const configLocal = await db.sistema.get('config_loja');
         if (configLocal?.loja_id) {
-          await supabase
+          const { error } = await supabase
             .from('produtos')
             .delete()
             .eq('loja_id', configLocal.loja_id)
             .eq('codigo', produtoParaApagar.codigo);
+            
+          if (error) console.error("Erro ao apagar na nuvem:", error);
         }
       }
     } catch (err) {
-      console.error("Erro ao apagar produto na nuvem:", err);
+      console.error("Erro ao processar exclusão:", err);
     }
   };
 
