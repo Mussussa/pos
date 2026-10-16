@@ -231,17 +231,25 @@ export function BackupGlobal() {
       }
 
       // 2. SINCRONIZAR VENDAS
+// 2. SINCRONIZAR VENDAS
       const vendasPendentes = await db.vendas.filter(v => !v.sincronizado).toArray();
       console.log(`📤 [Sincronização] Vendas pendentes para enviar (${vendasPendentes.length}):`, vendasPendentes);
 
       if (vendasPendentes.length > 0) {
-        const payloadVendas = vendasPendentes.map(v => ({
-          loja_id: lojaId,
-          data_venda: v.data ? new Date(v.data).toISOString() : new Date().toISOString(),
-          vendedor_id: String(v.vendedorId || 'admin'),
-          total: Number(v.total) || 0,
-          itens: v.itens || []
-        }));
+        const payloadVendas = vendasPendentes.map(v => {
+          // Garante conversão e validação numérica para evitar nulos na coluna 'total'
+          const valorTotal = Number(v.total ?? v.valorTotal ?? v.precoTotal ?? 0);
+          
+          return {
+            loja_id: lojaId,
+            data_venda: v.data ? new Date(v.data).toISOString() : new Date().toISOString(),
+            vendedor_id: String(v.vendedorId || v.vendedor || 'admin'),
+            total: isNaN(valorTotal) ? 0 : valorTotal,
+            itens: v.itens || v.produtos || []
+          };
+        });
+
+        console.log('📦 [Payload Vendas Limpo]:', payloadVendas);
 
         const { data: resVendas, error: erroVendas } = await supabase
           .from('vendas')
