@@ -49,7 +49,7 @@ export function BackupGlobal() {
     console.groupEnd();
   };
 
-  // 1. GESTÃO DE SESSÃO E GATILHO AUTOMÁTICO DE INTERNET
+  // 1. GESTÃO DE SESSÃO (Corre apenas 1 vez ao montar o componente - Sem Loop Infinito)
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSessao(session);
@@ -71,35 +71,52 @@ export function BackupGlobal() {
       }
     });
 
-    // ⚡ O SEGREDO DA FALHA 1: Deteta internet e sincroniza instantaneamente em background
-    const aoFicarOnline = () => {
+    return () => subscription.unsubscribe();
+  }, []); // <--- O SEGREDO ESTÁ AQUI: array vazio impede o congelamento.
+
+  // 1.5. DETETOR DE INTERNET SEGURO EM BACKGROUND
+  useEffect(() => {
+    const aoFicarOnline = async () => {
       console.log('🌐 Internet detetada! A sincronizar em background...');
-      if (sessao?.user?.id) {
-        obterOuRecuperarLoja(sessao.user.id).then(lojaId => {
-          if (lojaId) executarSincronizacaoSilenciosa(lojaId);
-        });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        const lojaId = await obterOuRecuperarLoja(session.user.id);
+        if (lojaId) executarSincronizacaoSilenciosa(lojaId);
       }
     };
 
     window.addEventListener('online', aoFicarOnline);
-    return () => {
-      subscription.unsubscribe();
-      window.removeEventListener('online', aoFicarOnline);
-    };
-  }, [sessao]);
+    return () => window.removeEventListener('online', aoFicarOnline);
+  }, []); // <--- Array vazio aqui também.
 
   const obterOuRecuperarLoja = async (userId) => {
     try {
       const configLocal = await db.sistema.get('config_loja');
       if (configLocal?.loja_id) {
+        console.log('✅ [obterOuRecuperarLoja] Loja encontrada no Dexie local:', configLocal);
         setLojaAtual({ id: configLocal.loja_id, nome: configLocal.nome_loja });
         return configLocal.loja_id;
       }
 
       if (navigator.onLine && userId) {
-        const { data: lojaNuvem } = await supabase.from('lojas').select('id, nome').eq('owner_id', userId).maybeSingle();
+        console.log('🔄 [obterOuRecuperarLoja] A procurar loja no Supabase para owner_id:', userId);
+        const { data: lojaNuvem, error } = await supabase
+          .from('lojas')
+          .select('id, nome')
+          .eq('owner_id', userId)
+          .maybeSingle();
+
+        if (error) {
+          console.error('🚨 Erro ao buscar loja no Supabase:', error);
+        }
+
         if (lojaNuvem) {
-          await db.sistema.put({ id: 'config_loja', loja_id: lojaNuvem.id, nome_loja: lojaNuvem.nome });
+          await db.sistema.put({
+            id: 'config_loja',
+            loja_id: lojaNuvem.id,
+            nome_loja: lojaNuvem.nome
+          });
+          console.log('✅ [obterOuRecuperarLoja] Loja recuperada da nuvem e salva no Dexie:', lojaNuvem);
           setLojaAtual(lojaNuvem);
           return lojaNuvem.id;
         }
@@ -118,19 +135,25 @@ export function BackupGlobal() {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
         if (error) throw error;
         const lojaId = await obterOuRecuperarLoja(data.user.id);
-        if (!lojaId) return setStatus('⚠️ Nenhuma loja encontrada.');
+        await auditarBancos('Pós-Login');
+        if (!lojaId) return setStatus('⚠️ Conta autenticada, mas nenhuma loja encontrada.');
         setStatus('✅ Login efetuado!');
       } else {
-        const { error: authError } = await supabase.auth.signUp({ email, password: senha });
+        console.log('🚀 [Registo] A criar conta no Supabase Auth...');
+        const { data: authData, error: authError } = await supabase.auth.signUp({ email, password: senha });
         if (authError) throw authError;
 
+        console.log('🔑 [Registo] Conta criada:', authData?.user?.id, 'A validar chave RPC...');
         const { data: rpcData, error: rpcError } = await supabase.rpc('registar_loja_com_chave', {
           p_nome_loja: nomeLoja, p_chave: chave
         });
+        
+        console.log('📡 [Registo] Resposta do RPC registar_loja_com_chave:', { rpcData, rpcError });
         if (rpcError) return setStatus(`🚨 Erro licença: ${rpcError.message}`);
 
         await db.sistema.put({ id: 'config_loja', loja_id: rpcData.loja_id, nome_loja: nomeLoja });
         setLojaAtual({ id: rpcData.loja_id, nome: nomeLoja });
+        await auditarBancos('Pós-Registo');
         setStatus('✅ Loja ativada e conectada!');
       }
     } catch (err) {
@@ -138,7 +161,7 @@ export function BackupGlobal() {
     }
   };
 
-// 2. MOTOR DE SINCRONIZAÇÃO (Roda sem o utilizador ver)
+  // 2. MOTOR DE SINCRONIZAÇÃO (Roda sem o utilizador ver)
   const executarSincronizacaoSilenciosa = async (lojaIdForcada = null) => {
     if (!navigator.onLine) return;
 
@@ -171,10 +194,8 @@ export function BackupGlobal() {
       const vendasPendentes = await db.vendas.filter(v => !v.sincronizado).toArray();
       if (vendasPendentes.length > 0) {
         const payloadVendas = vendasPendentes.map(v => {
-          // Extrai o valor real, suportando várias nomenclaturas possíveis
+          // Extrai o valor real e protege contra nulos
           let valorCalculado = Number(v.total ?? v.valor ?? v.precoTotal ?? v.subtotal ?? v.valor_total ?? 0);
-          
-          // Fallback de segurança: Se for inválido, garante que envia 0 em vez de null
           if (isNaN(valorCalculado) || valorCalculado === null || valorCalculado === undefined) {
              valorCalculado = 0;
           }
@@ -183,7 +204,7 @@ export function BackupGlobal() {
             loja_id: lojaId,
             data_venda: v.data ? new Date(v.data).toISOString() : new Date().toISOString(),
             vendedor_id: String(v.vendedorId || v.vendedor || 'admin'),
-            total: valorCalculado, // Valor garantidamente numérico
+            total: valorCalculado,
             itens: v.itens || v.produtos || v.cart || []
           };
         });
@@ -194,12 +215,12 @@ export function BackupGlobal() {
             for (const venda of vendasPendentes) await db.vendas.update(venda.id, { sincronizado: 1 });
           });
         } else {
-             throw erroVendas; // Dispara erro visível se o insert falhar
+             throw erroVendas;
         }
       }
     } catch (err) {
       console.error('Erro sincronização background:', err);
-      throw err; // Repassa erro para a função forcarSincronizacao mostrar
+      throw err; 
     }
   };
 
@@ -209,6 +230,7 @@ export function BackupGlobal() {
     setStatus('A sincronizar com a nuvem...');
     try {
         await executarSincronizacaoSilenciosa();
+        await auditarBancos('Depois da Sincronização');
         setStatus('✅ Sincronização concluída com sucesso!');
     } catch (err) {
         setStatus(`🚨 Erro: ${err.message}`);
@@ -249,6 +271,7 @@ export function BackupGlobal() {
           })));
         }
       });
+      await auditarBancos('Pós-Restauro da Nuvem');
       setStatus(`✅ Base reconstruída!`);
     } catch (err) {
       setStatus(`🚨 Erro: ${err.message}`);
