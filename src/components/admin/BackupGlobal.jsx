@@ -396,7 +396,11 @@ export function BackupGlobal() {
       <div className="mt-6 flex justify-between items-center bg-white border border-zinc-200 p-4 rounded-lg">
         <span className="text-sm font-mono">{status || 'Sistema Operacional'}</span>
         <button 
-          onClick={() => supabase.auth.signOut()}
+          onClick={async () => {
+  await db.sistema.delete('config_loja');
+  setLojaAtual(null);
+  await supabase.auth.signOut();
+}}
           className="text-sm text-red-500 hover:text-red-700 font-bold flex items-center gap-1"
         >
           <LogIn size={16} /> Terminar Sessão
