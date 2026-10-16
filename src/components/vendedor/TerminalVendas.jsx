@@ -68,6 +68,7 @@ export function TerminalVendas() {
     db.produtos.where("stock").above(0).toArray(),
   );
   const vendas = useLiveQuery(() => db.vendas.toArray());
+  const perfilLoja = useLiveQuery(() => db.sistema.get('perfil_loja'));
 
   const [filtroCategoria, setFiltroCategoria] = useState("todas");
   const [filtroSubcategoria, setFiltroSubcategoria] = useState("todas");
@@ -173,8 +174,6 @@ export function TerminalVendas() {
       return [...prev, { ...produto, quantidade: 1, valorInput: null }];
     });
   };
-
-  const perfilLoja = useLiveQuery(() => db.sistema.get('perfil_loja'));
 
   const alterarQuantidade = (id, delta) => {
     setCarrinho((prev) =>
@@ -317,7 +316,6 @@ export function TerminalVendas() {
       }
       setCarrinho([]);
 
-      // O GATILHO DA NUVEM: Acorda o motor invisível se houver internet
       if (navigator.onLine) {
         window.dispatchEvent(new Event('online'));
       }
@@ -415,7 +413,6 @@ export function TerminalVendas() {
 
   return (
     <div className="flex flex-col md:flex-row h-full min-h-screen bg-zinc-50 text-zinc-900 font-sans relative">
-      {/* MODAL DE HISTÓRICO DE VENDAS */}
       {mostrarHistorico && (
         <div className="fixed inset-0 z-50 bg-zinc-900/80 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
@@ -444,27 +441,17 @@ export function TerminalVendas() {
               <table className="w-full text-left border-collapse">
                 <thead className="bg-zinc-100 text-zinc-600 sticky top-0 shadow-sm text-sm">
                   <tr>
-                    <th className="p-3 md:p-4 font-semibold rounded-tl-lg">
-                      Data
-                    </th>
+                    <th className="p-3 md:p-4 font-semibold rounded-tl-lg">Data</th>
                     <th className="p-3 md:p-4 font-semibold">Artigos</th>
-                    <th className="p-3 md:p-4 font-semibold text-right rounded-tr-lg">
-                      Valor
-                    </th>
+                    <th className="p-3 md:p-4 font-semibold text-right rounded-tr-lg">Valor</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 text-xs md:text-sm">
                   {historicoPaginado.map((v) => (
-                    <tr
-                      key={v.id}
-                      className="hover:bg-orange-50/50 transition-colors"
-                    >
+                    <tr key={v.id} className="hover:bg-orange-50/50 transition-colors">
                       <td className="p-3 md:p-4 text-zinc-700 whitespace-nowrap font-medium">
                         {new Date(v.data || v.data_venda).toLocaleString("pt-MZ", {
-                          day: "2-digit",
-                          month: "short",
-                          hour: "2-digit",
-                          minute: "2-digit",
+                          day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
                         })}
                       </td>
                       <td className="p-3 md:p-4 text-zinc-600">
@@ -483,10 +470,7 @@ export function TerminalVendas() {
                   ))}
                   {historicoPaginado.length === 0 && (
                     <tr>
-                      <td
-                        colSpan="3"
-                        className="p-8 text-center text-zinc-500 text-base md:text-lg"
-                      >
+                      <td colSpan="3" className="p-8 text-center text-zinc-500 text-base md:text-lg">
                         Sem histórico de vendas.
                       </td>
                     </tr>
@@ -502,20 +486,14 @@ export function TerminalVendas() {
                 </span>
                 <div className="flex gap-2">
                   <button
-                    onClick={() =>
-                      setPaginaHistorico((prev) => Math.max(prev - 1, 1))
-                    }
+                    onClick={() => setPaginaHistorico((prev) => Math.max(prev - 1, 1))}
                     disabled={paginaHistorico === 1}
                     className="p-2 border border-zinc-300 bg-white rounded text-zinc-700 hover:border-orange-500 hover:text-orange-500 disabled:opacity-50 transition-colors"
                   >
                     <ChevronLeft size={20} />
                   </button>
                   <button
-                    onClick={() =>
-                      setPaginaHistorico((prev) =>
-                        Math.min(prev + 1, totalPaginasHistorico),
-                      )
-                    }
+                    onClick={() => setPaginaHistorico((prev) => Math.min(prev + 1, totalPaginasHistorico))}
                     disabled={paginaHistorico === totalPaginasHistorico}
                     className="p-2 border border-zinc-300 bg-white rounded text-zinc-700 hover:border-orange-500 hover:text-orange-500 disabled:opacity-50 transition-colors"
                   >
@@ -531,7 +509,6 @@ export function TerminalVendas() {
       {/* Esquerda: Vitrine e Filtros */}
       <div className="w-full md:w-3/5 lg:w-[65%] p-4 md:p-6 flex flex-col h-screen md:h-full overflow-hidden print:hidden border-b md:border-b-0 md:border-r border-zinc-200">
         
-        {/* Letreiro de Giro */}
         <div className="mb-4 md:mb-6 bg-white border border-orange-200 rounded-xl p-3 md:p-4 shadow-sm flex items-center gap-3 md:gap-4 shrink-0">
           <span className="bg-orange-500 text-white text-xs md:text-sm font-bold uppercase px-2 py-1.5 md:px-3 md:py-2 rounded shrink-0 animate-pulse">
             🔥 Top
@@ -556,7 +533,6 @@ export function TerminalVendas() {
           </div>
         </div>
 
-        {/* Cabeçalho e Filtros */}
         <div className="flex flex-col gap-4 md:gap-6 mb-4 md:mb-6 shrink-0">
           <div className="flex justify-between items-center">
             <h2 className="text-2xl md:text-3xl font-black text-orange-500 uppercase tracking-wider">
@@ -633,7 +609,6 @@ export function TerminalVendas() {
           </div>
         </div>
 
-        {/* Vitrine de Produtos */}
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 flex-1 overflow-y-auto pb-6 custom-scrollbar pr-2">
           {produtosVitrine?.map((p) => (
             <button 
@@ -666,7 +641,6 @@ export function TerminalVendas() {
         </div>
       </div>
 
-      {/* Direita: Carrinho */}
       <div className="w-full md:w-2/5 lg:w-[35%] bg-white border-l border-zinc-200 p-4 md:p-6 flex flex-col h-auto md:h-screen shadow-2xl z-10 print:hidden overflow-hidden">
         <h3 className="text-xl md:text-2xl font-black text-zinc-800 mb-4 md:mb-6 flex items-center gap-3 shrink-0">
           <ShoppingCart className="text-orange-500" size={24} /> Carrinho Atual
@@ -841,12 +815,10 @@ export function TerminalVendas() {
         </div>
       </div>
 
-      {/* Estilos específicos para forçar o corte do papel na impressora térmica POS58 */}
       <style type="text/css">
         {`
           @media print {
             @page {
-              size: 58mm auto; /* Magia: Altura ajusta-se automaticamente ao texto! */
               margin: 0;
             }
             body {
@@ -857,22 +829,22 @@ export function TerminalVendas() {
         `}
       </style>
 
-      {/* Recibo Térmico de Impressão (Ajustado para 58mm) */}
-      <div className="hidden print:block absolute top-0 left-0 bg-white text-black pt-2 pb-8 px-2 font-mono w-[58mm] text-xs mx-auto leading-tight">
+      {/* Recibo Térmico de Impressão */}
+      <div className="hidden print:block absolute top-0 left-0 bg-white text-black pt-1 pb-4 px-1 font-mono w-[58mm] mx-auto leading-tight" style={{ fontSize: '11px' }}>
         <div className="text-center">
-          <h2 className="font-bold text-lg uppercase mb-1">
+          <h2 className="font-bold text-base uppercase mb-1">
             {perfilLoja?.nome_loja || "VULPE MART"}
           </h2>
-          <h3 className="font-bold text-[10px] uppercase mb-1">
+          <h3 className="font-bold text-[9px] uppercase mb-1">
             MERCEARIA E CONVENIÊNCIA
           </h3>
-          <p className="text-[10px] mb-3">
+          <p className="text-[9px] mb-3">
             {perfilLoja?.endereco || "Chimoio, Manica"}. 
             <br />
             Contacto: {perfilLoja?.telefone || "845773342"}
           </p>
 
-          <p className="text-[10px] text-left mb-2">
+          <p className="text-[9px] text-left mb-2">
             Data: {new Date().toLocaleString("pt-MZ")}
             <br />
             Op: Vendedor
@@ -880,7 +852,7 @@ export function TerminalVendas() {
 
           <div className="border-t border-black border-dashed my-1"></div>
 
-          <table className="w-full text-left text-[10px] mb-1">
+          <table className="w-full text-left text-[9px] mb-1">
             <thead>
               <tr>
                 <th className="pb-1 w-6">Qtd</th>
@@ -910,14 +882,14 @@ export function TerminalVendas() {
 
           <div className="border-t border-black border-dashed my-1"></div>
 
-          <div className="flex justify-between font-bold text-sm mb-3 mt-1">
+          <div className="flex justify-between font-bold text-xs mb-3 mt-1">
             <span>TOTAL MT:</span>
             <span>{totalVenda.toFixed(2)}</span>
           </div>
 
           <p className="text-[9px] text-center mt-4 text-black font-bold">Obrigado pela preferência!</p>
           <p className="text-[7px] text-center mt-1 text-gray-800 uppercase tracking-widest">
-            Software by Vulpe Instinct
+            SOFTWARE BY VULPE INSTINCT
           </p>
         </div>
       </div>
