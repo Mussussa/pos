@@ -16,192 +16,137 @@ export function BackupGlobal() {
   const [nomeLoja, setNomeLoja] = useState('');
   const [chave, setChave] = useState('');
 
-  // 🔍 FUNÇÃO DE AUDITORIA: Verifica Dexie Local e Supabase Nuvem no Console
+  // 🔍 FUNÇÃO DE AUDITORIA
   const auditarBancos = async (contexto = 'Auditoria') => {
     console.group(`🔍 [${contexto}] Verificação de Dados (Local vs Nuvem)`);
     try {
-      // 1. Verificar Banco Local (Dexie)
       const configLocal = await db.sistema.get('config_loja');
       const produtosLocais = await db.produtos.toArray();
       const vendasLocais = await db.vendas.toArray();
 
       console.log('📦 [DEXIE LOCAL] config_loja:', configLocal || '⚠️ Não configurado');
-      console.log(`📦 [DEXIE LOCAL] Produtos (${produtosLocais.length} total):`, produtosLocais);
-      console.log(`📦 [DEXIE LOCAL] Vendas (${vendasLocais.length} total):`, vendasLocais);
+      console.log(`📦 [DEXIE LOCAL] Produtos (${produtosLocais.length}):`, produtosLocais);
+      console.log(`📦 [DEXIE LOCAL] Vendas (${vendasLocais.length}):`, vendasLocais);
 
-      // 2. Verificar Banco na Nuvem (Supabase)
       if (navigator.onLine) {
         const { data: { user } } = await supabase.auth.getUser();
-        console.log('👤 [SUPABASE AUTH] Utilizador logado:', user ? { id: user.id, email: user.email } : 'Nenhum');
-
         if (user) {
-          const { data: lojasNuvem, error: errLoja } = await supabase
-            .from('lojas')
-            .select('*')
-            .eq('owner_id', user.id);
-          console.log('☁️ [SUPABASE NUVEM] Tabela lojas:', errLoja ? errLoja : lojasNuvem);
-
+          const { data: lojasNuvem } = await supabase.from('lojas').select('*').eq('owner_id', user.id);
           const lojaId = configLocal?.loja_id || lojasNuvem?.[0]?.id;
+          
           if (lojaId) {
-            const { data: prodNuvem, error: errProd } = await supabase
-              .from('produtos')
-              .select('*')
-              .eq('loja_id', lojaId);
-            console.log(`☁️ [SUPABASE NUVEM] Tabela produtos (${prodNuvem?.length || 0}):`, errProd ? errProd : prodNuvem);
+            const { data: prodNuvem } = await supabase.from('produtos').select('*').eq('loja_id', lojaId);
+            console.log(`☁️ [SUPABASE NUVEM] Produtos (${prodNuvem?.length || 0}):`, prodNuvem);
 
-            const { data: vendasNuvem, error: errVendas } = await supabase
-              .from('vendas')
-              .select('*')
-              .eq('loja_id', lojaId);
-            console.log(`☁️ [SUPABASE NUVEM] Tabela vendas (${vendasNuvem?.length || 0}):`, errVendas ? errVendas : vendasNuvem);
+            const { data: vendasNuvem } = await supabase.from('vendas').select('*').eq('loja_id', lojaId);
+            console.log(`☁️ [SUPABASE NUVEM] Vendas (${vendasNuvem?.length || 0}):`, vendasNuvem);
           }
         }
-      } else {
-        console.warn('⚠️ Sem internet para auditar o Supabase.');
       }
     } catch (err) {
-      console.error('🚨 Erro durante a auditoria:', err);
+      console.error('🚨 Erro auditoria:', err);
     }
     console.groupEnd();
   };
 
-  // 1. Verifica a sessão do Supabase e carrega os dados da loja
+  // 1. GESTÃO DE SESSÃO E GATILHO AUTOMÁTICO DE INTERNET
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSessao(session);
-      if (session) obterOuRecuperarLoja(session.user.id);
+      if (session) {
+        obterOuRecuperarLoja(session.user.id).then(lojaId => {
+          if (lojaId) executarSincronizacaoSilenciosa(lojaId); // Dispara ao abrir a app
+        });
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSessao(session);
       if (session) {
-        obterOuRecuperarLoja(session.user.id);
+        obterOuRecuperarLoja(session.user.id).then(lojaId => {
+          if (lojaId) executarSincronizacaoSilenciosa(lojaId); // Dispara no login
+        });
       } else {
         setLojaAtual(null);
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    // ⚡ O SEGREDO DA FALHA 1: Deteta internet e sincroniza instantaneamente em background
+    const aoFicarOnline = () => {
+      console.log('🌐 Internet detetada! A sincronizar em background...');
+      if (sessao?.user?.id) {
+        obterOuRecuperarLoja(sessao.user.id).then(lojaId => {
+          if (lojaId) executarSincronizacaoSilenciosa(lojaId);
+        });
+      }
+    };
 
-  // Função que garante que sabemos sempre o ID da loja (Local ou Nuvem)
+    window.addEventListener('online', aoFicarOnline);
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('online', aoFicarOnline);
+    };
+  }, [sessao]);
+
   const obterOuRecuperarLoja = async (userId) => {
     try {
       const configLocal = await db.sistema.get('config_loja');
       if (configLocal?.loja_id) {
-        console.log('✅ [obterOuRecuperarLoja] Loja encontrada no Dexie local:', configLocal);
         setLojaAtual({ id: configLocal.loja_id, nome: configLocal.nome_loja });
         return configLocal.loja_id;
       }
 
       if (navigator.onLine && userId) {
-        console.log('🔄 [obterOuRecuperarLoja] A procurar loja no Supabase para owner_id:', userId);
-        const { data: lojaNuvem, error } = await supabase
-          .from('lojas')
-          .select('id, nome')
-          .eq('owner_id', userId)
-          .maybeSingle();
-
-        if (error) {
-          console.error('🚨 Erro ao buscar loja no Supabase:', error);
-        }
-
+        const { data: lojaNuvem } = await supabase.from('lojas').select('id, nome').eq('owner_id', userId).maybeSingle();
         if (lojaNuvem) {
-          await db.sistema.put({
-            id: 'config_loja',
-            loja_id: lojaNuvem.id,
-            nome_loja: lojaNuvem.nome
-          });
-          console.log('✅ [obterOuRecuperarLoja] Loja recuperada da nuvem e salva no Dexie:', lojaNuvem);
+          await db.sistema.put({ id: 'config_loja', loja_id: lojaNuvem.id, nome_loja: lojaNuvem.nome });
           setLojaAtual(lojaNuvem);
           return lojaNuvem.id;
         }
       }
     } catch (err) {
-      console.error('Erro ao identificar a loja:', err);
+      console.error('Erro identificar loja:', err);
     }
     return null;
   };
 
-  // 2. Autenticação e Registo Inicial
   const gerirAutenticacao = async (e) => {
     e.preventDefault();
     setStatus('A processar...');
-
     try {
       if (isLogin) {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
         if (error) throw error;
-        
         const lojaId = await obterOuRecuperarLoja(data.user.id);
-        await auditarBancos('Pós-Login');
-
-        if (!lojaId) {
-          setStatus('⚠️ Conta autenticada, mas nenhuma loja encontrada para este utilizador.');
-          return;
-        }
-        setStatus('✅ Login efetuado e loja identificada!');
+        if (!lojaId) return setStatus('⚠️ Nenhuma loja encontrada.');
+        setStatus('✅ Login efetuado!');
       } else {
-        console.log('🚀 [Registo] A criar conta no Supabase Auth...');
-        const { data: authData, error: authError } = await supabase.auth.signUp({ 
-          email, 
-          password: senha 
-        });
+        const { error: authError } = await supabase.auth.signUp({ email, password: senha });
         if (authError) throw authError;
 
-        console.log('🔑 [Registo] Conta criada:', authData?.user?.id, 'A validar chave RPC...');
         const { data: rpcData, error: rpcError } = await supabase.rpc('registar_loja_com_chave', {
-          p_nome_loja: nomeLoja,
-          p_chave: chave
+          p_nome_loja: nomeLoja, p_chave: chave
         });
+        if (rpcError) return setStatus(`🚨 Erro licença: ${rpcError.message}`);
 
-        console.log('📡 [Registo] Resposta do RPC registar_loja_com_chave:', { rpcData, rpcError });
-
-        if (rpcError) {
-          setStatus(`🚨 Erro na licença: ${rpcError.message}`);
-          return;
-        }
-
-        await db.sistema.put({
-          id: 'config_loja',
-          loja_id: rpcData.loja_id,
-          nome_loja: nomeLoja
-        });
+        await db.sistema.put({ id: 'config_loja', loja_id: rpcData.loja_id, nome_loja: nomeLoja });
         setLojaAtual({ id: rpcData.loja_id, nome: nomeLoja });
-
-        await auditarBancos('Pós-Registo');
-        setStatus('✅ Loja ativada, registada localmente e conectada à Nuvem!');
+        setStatus('✅ Loja ativada e conectada!');
       }
     } catch (err) {
-      console.error('🚨 [gerirAutenticacao] Erro:', err);
       setStatus(`🚨 Erro: ${err.message}`);
     }
   };
 
-  // 3. Sincronização (Dexie -> Supabase)
-  const forcarSincronizacao = async () => {
-    if (!navigator.onLine) {
-      setStatus('⚠️ Estás offline. Conecta-te à internet primeiro.');
-      return;
-    }
-
-    setStatus('A sincronizar com a nuvem...');
+  // 2. MOTOR DE SINCRONIZAÇÃO (Roda sem o utilizador ver)
+  const executarSincronizacaoSilenciosa = async (lojaIdForcada = null) => {
+    if (!navigator.onLine) return;
 
     try {
-      await auditarBancos('Antes da Sincronização');
+      const lojaId = lojaIdForcada || lojaAtual?.id || (await obterOuRecuperarLoja(sessao?.user?.id));
+      if (!lojaId) return;
 
-      const lojaId = lojaAtual?.id || (await obterOuRecuperarLoja(sessao?.user?.id));
-      console.log('🎯 [Sincronização] ID da Loja confirmado:', lojaId);
-
-      if (!lojaId) {
-        setStatus('🚨 Erro: Não foi possível identificar o ID desta loja.');
-        return;
-      }
-
-      // 1. SINCRONIZAR PRODUTOS
       const produtosPendentes = await db.produtos.filter(p => !p.sincronizado).toArray();
-      console.log(`📤 [Sincronização] Produtos pendentes para enviar (${produtosPendentes.length}):`, produtosPendentes);
-
       if (produtosPendentes.length > 0) {
         const payloadProdutos = produtosPendentes.map(p => ({
           loja_id: lojaId,
@@ -215,30 +160,18 @@ export function BackupGlobal() {
           unidade_medida: p.unidadeMedida || 'Un.'
         }));
 
-        const { data: resProd, error: erroProdutos } = await supabase
-          .from('produtos')
-          .upsert(payloadProdutos, { onConflict: 'loja_id, codigo' })
-          .select();
-
-        console.log('☁️ [Sincronização] Resposta Supabase Produtos:', { resProd, erroProdutos });
-        if (erroProdutos) throw erroProdutos;
-
-        await db.transaction('rw', db.produtos, async () => {
-          for (const prod of produtosPendentes) {
-            await db.produtos.update(prod.id, { sincronizado: 1 });
-          }
-        });
+        const { error: erroProdutos } = await supabase.from('produtos').upsert(payloadProdutos, { onConflict: 'loja_id, codigo' });
+        if (!erroProdutos) {
+          await db.transaction('rw', db.produtos, async () => {
+            for (const prod of produtosPendentes) await db.produtos.update(prod.id, { sincronizado: 1 });
+          });
+        }
       }
 
-   // 2. SINCRONIZAR VENDAS (Blindado contra nomes diferentes de campos)
       const vendasPendentes = await db.vendas.filter(v => !v.sincronizado).toArray();
-      console.log(`📤 [Sincronização] Vendas pendentes brutas do Dexie:`, vendasPendentes);
-
       if (vendasPendentes.length > 0) {
         const payloadVendas = vendasPendentes.map(v => {
-          // Varre todas as hipóteses possíveis de nomes de campos usados no teu POS
           const valorCalculado = Number(v.total ?? v.valor ?? v.precoTotal ?? v.subtotal ?? 0);
-          
           return {
             loja_id: lojaId,
             data_venda: v.data ? new Date(v.data).toISOString() : new Date().toISOString(),
@@ -248,61 +181,40 @@ export function BackupGlobal() {
           };
         });
 
-        console.log('📦 [Payload Vendas Pronto a Enviar]:', payloadVendas);
-
-        const { data: resVendas, error: erroVendas } = await supabase
-          .from('vendas')
-          .insert(payloadVendas)
-          .select();
-
-        console.log('☁️ [Sincronização] Resposta Supabase Vendas:', { resVendas, erroVendas });
-        if (erroVendas) throw erroVendas;
-
-        await db.transaction('rw', db.vendas, async () => {
-          for (const venda of vendasPendentes) {
-            await db.vendas.update(venda.id, { sincronizado: 1 });
-          }
-        });
+        const { error: erroVendas } = await supabase.from('vendas').insert(payloadVendas);
+        if (!erroVendas) {
+          await db.transaction('rw', db.vendas, async () => {
+            for (const venda of vendasPendentes) await db.vendas.update(venda.id, { sincronizado: 1 });
+          });
+        }
       }
-
-      await auditarBancos('Depois da Sincronização');
-
-      setStatus(produtosPendentes.length === 0 && vendasPendentes.length === 0 
-        ? '✅ Tudo já estava atualizado.' 
-        : `✅ ${produtosPendentes.length} produtos e ${vendasPendentes.length} vendas guardados na nuvem!`);
-        
-    } catch (erro) {
-      console.error('🚨 [Sincronização] Erro fatal:', erro);
-      setStatus(`🚨 Erro na comunicação com a nuvem: ${erro.message}`);
+    } catch (err) {
+      console.error('Erro sincronização background:', err);
     }
   };
 
-  // 4. Recuperação de Emergência (Supabase -> Dexie)
+  // Botão manual para forçar (usa o mesmo motor)
+  const forcarSincronizacao = async () => {
+    if (!navigator.onLine) return setStatus('⚠️ Estás offline.');
+    setStatus('A sincronizar com a nuvem...');
+    await executarSincronizacaoSilenciosa();
+    setStatus('✅ Sincronização concluída com sucesso!');
+  };
+
+  // 3. RECUPERAÇÃO DE EMERGÊNCIA
   const restaurarDaNuvem = async () => {
-    if (!navigator.onLine) {
-      setStatus('⚠️ Precisas de internet para descarregar os dados da nuvem.');
-      return;
-    }
+    if (!navigator.onLine) return setStatus('⚠️ Precisas de internet.');
+    if (!window.confirm('Substituir dados locais pela nuvem?')) return;
 
-    const confirmar = window.confirm('Isto vai substituir os produtos e vendas locais pelos dados da nuvem. Continuar?');
-    if (!confirmar) return;
-
-    setStatus('A descarregar dados da loja...');
-
+    setStatus('A descarregar dados...');
     try {
       const lojaId = lojaAtual?.id || (await obterOuRecuperarLoja(sessao?.user?.id));
-      if (!lojaId) throw new Error('Loja não identificada para esta conta.');
+      if (!lojaId) throw new Error('Loja não identificada.');
 
-      const { data: prodNuvem, error: errProd } = await supabase
-        .from('produtos')
-        .select('*')
-        .eq('loja_id', lojaId);
+      const { data: prodNuvem, error: errProd } = await supabase.from('produtos').select('*').eq('loja_id', lojaId);
       if (errProd) throw errProd;
 
-      const { data: vendasNuvem, error: errVendas } = await supabase
-        .from('vendas')
-        .select('*')
-        .eq('loja_id', lojaId);
+      const { data: vendasNuvem, error: errVendas } = await supabase.from('vendas').select('*').eq('loja_id', lojaId);
       if (errVendas) throw errVendas;
 
       await db.transaction('rw', db.produtos, db.vendas, async () => {
@@ -310,58 +222,31 @@ export function BackupGlobal() {
         await db.vendas.clear();
 
         if (prodNuvem && prodNuvem.length > 0) {
-          const produtosFormatados = prodNuvem.map(p => ({
-            codigo: p.codigo,
-            nome: p.nome,
-            categoria: p.categoria,
-            subcategoria: p.subcategoria,
-            precoVenda: Number(p.preco_venda),
-            precoCusto: Number(p.preco_custo),
-            stock: Number(p.stock),
-            unidadeMedida: p.unidade_medida,
-            sincronizado: 1
-          }));
-          await db.produtos.bulkAdd(produtosFormatados);
+          await db.produtos.bulkAdd(prodNuvem.map(p => ({
+            codigo: p.codigo, nome: p.nome, categoria: p.categoria, subcategoria: p.subcategoria,
+            precoVenda: Number(p.preco_venda), precoCusto: Number(p.preco_custo), stock: Number(p.stock),
+            unidadeMedida: p.unidade_medida, sincronizado: 1
+          })));
         }
-
         if (vendasNuvem && vendasNuvem.length > 0) {
-          const vendasFormatadas = vendasNuvem.map(v => ({
-            data: v.data_venda,
-            vendedorId: v.vendedor_id,
-            total: Number(v.total),
-            itens: v.itens || [],
-            sincronizado: 1
-          }));
-          await db.vendas.bulkAdd(vendasFormatadas);
+          await db.vendas.bulkAdd(vendasNuvem.map(v => ({
+            data: v.data_venda, vendedorId: v.vendedor_id, total: Number(v.total),
+            itens: v.itens || [], sincronizado: 1
+          })));
         }
       });
-
-      await auditarBancos('Pós-Restauro da Nuvem');
-      setStatus(`✅ Base reconstruída! (${prodNuvem.length} produtos e ${vendasNuvem.length} vendas recuperadas)`);
+      setStatus(`✅ Base reconstruída!`);
     } catch (err) {
-      console.error('🚨 [Restauro] Erro:', err);
-      setStatus(`🚨 Erro ao restaurar: ${err.message}`);
+      setStatus(`🚨 Erro: ${err.message}`);
     }
   };
 
-  useEffect(() => {
-    const ativarSincronizacaoAutomatica = () => {
-      if (sessao && lojaAtual?.id) {
-        forcarSincronizacao();
-      }
-    };
-
-    window.addEventListener('online', ativarSincronizacaoAutomatica);
-    return () => window.removeEventListener('online', ativarSincronizacaoAutomatica);
-  }, [sessao, lojaAtual]);
-
   if (currentUser?.role !== 'admin') {
     return (
-      <div className="p-6 bg-zinc-50 min-h-full flex flex-col items-center justify-center font-sans">
-        <div className="bg-red-50 p-8 rounded-lg shadow-sm border border-red-200 text-center">
+      <div className="p-6 bg-zinc-50 min-h-full flex flex-col items-center justify-center">
+        <div className="bg-red-50 p-8 rounded-lg text-center">
           <AlertTriangle size={48} className="text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-red-700 mb-2">Acesso Restrito</h2>
-          <p className="text-red-600">Apenas administradores podem gerir a sincronização com a nuvem.</p>
+          <h2 className="text-xl font-bold text-red-700">Acesso Restrito</h2>
         </div>
       </div>
     );
@@ -371,51 +256,30 @@ export function BackupGlobal() {
     return (
       <div className="p-6 bg-zinc-50 min-h-full flex flex-col items-center justify-center font-sans">
         <div className="bg-white p-8 rounded-lg shadow-sm border border-zinc-200 w-full max-w-md text-black">
-          <h2 className="text-2xl font-bold mb-6 text-blue-500 uppercase tracking-wider flex items-center justify-center gap-2">
+          <h2 className="text-2xl font-bold mb-6 text-blue-500 uppercase flex items-center justify-center gap-2">
             <ShieldCheck size={28} /> Vulpe Mart Premium
           </h2>
-          
           <form onSubmit={gerirAutenticacao} className="flex flex-col gap-4">
-            <input 
-              type="email" placeholder="Email do Administrador" required
-              value={email} onChange={e => setEmail(e.target.value)}
-              className="p-3 border border-zinc-300 rounded outline-none focus:border-orange-500"
-            />
-            <input 
-              type="password" placeholder="Senha segura" required
-              value={senha} onChange={e => setSenha(e.target.value)}
-              className="p-3 border border-zinc-300 rounded outline-none focus:border-orange-500"
-            />
-            
+            <input type="email" placeholder="Email do Admin" required value={email} onChange={e => setEmail(e.target.value)} className="p-3 border rounded focus:border-orange-500" />
+            <input type="password" placeholder="Senha segura" required value={senha} onChange={e => setSenha(e.target.value)} className="p-3 border rounded focus:border-orange-500" />
             {!isLogin && (
               <>
-                <input 
-                  type="text" placeholder="Nome da Loja (ex: Mercearia Central)" required
-                  value={nomeLoja} onChange={e => setNomeLoja(e.target.value)}
-                  className="p-3 border border-zinc-300 rounded outline-none focus:border-orange-500"
-                />
+                <input type="text" placeholder="Nome da Loja" required value={nomeLoja} onChange={e => setNomeLoja(e.target.value)} className="p-3 border rounded focus:border-orange-500" />
                 <div className="relative">
                   <Key size={18} className="absolute left-3 top-3.5 text-zinc-400" />
-                  <input 
-                    type="text" placeholder="Chave de Licença Premium" required
-                    value={chave} onChange={e => setChave(e.target.value)}
-                    className="p-3 pl-10 border border-zinc-300 rounded outline-none focus:border-orange-500 w-full font-mono uppercase"
-                  />
+                  <input type="text" placeholder="Chave Premium" required value={chave} onChange={e => setChave(e.target.value)} className="p-3 pl-10 border rounded w-full uppercase" />
                 </div>
               </>
             )}
-
-            <button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white font-bold p-3 rounded transition-colors mt-2">
-              {isLogin ? 'Entrar no Sistema' : 'Ativar Licença e Registar'}
+            <button type="submit" className="bg-orange-500 text-white font-bold p-3 rounded mt-2">
+              {isLogin ? 'Entrar no Sistema' : 'Ativar Licença'}
             </button>
           </form>
-
-          <button onClick={() => setIsLogin(!isLogin)} className="w-full text-center text-sm text-zinc-500 mt-6 hover:text-orange-500 transition-colors">
-            {isLogin ? 'Primeiro acesso? Ativa a tua licença aqui.' : 'Já tens a loja ativada? Faz Login.'}
+          <button onClick={() => setIsLogin(!isLogin)} className="w-full text-center text-sm text-zinc-500 mt-6 hover:text-orange-500">
+            {isLogin ? 'Primeiro acesso? Ativa aqui.' : 'Já ativaste? Faz Login.'}
           </button>
         </div>
-        
-        {status && <div className="mt-4 text-sm font-bold text-zinc-700">{status}</div>}
+        {status && <div className="mt-4 text-sm font-bold">{status}</div>}
       </div>
     );
   }
@@ -423,71 +287,40 @@ export function BackupGlobal() {
   return (
     <div className="p-6 bg-zinc-50 min-h-full text-zinc-900 font-sans">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-orange-500 uppercase tracking-wider flex items-center gap-2">
+        <h2 className="text-2xl font-bold text-orange-500 uppercase flex items-center gap-2">
           <CloudLightning size={28} /> Sincronização Premium
         </h2>
         <div className="flex items-center gap-2">
-          {lojaAtual && (
-            <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-xs font-bold uppercase">
-              Loja: {lojaAtual.nome} ({lojaAtual.id.slice(0, 8)}...)
-            </span>
-          )}
-          <button
-            onClick={() => auditarBancos('Auditoria Manual')}
-            className="bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-1 rounded text-xs font-mono"
-          >
-            Ver Logs no Console
-          </button>
+          {lojaAtual && <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-xs font-bold uppercase">Loja: {lojaAtual.nome}</span>}
+          <button onClick={() => auditarBancos('Auditoria')} className="bg-zinc-800 text-white px-3 py-1 rounded text-xs font-mono">Ver Logs</button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white border border-zinc-200 p-6 rounded-lg shadow-sm">
           <h3 className="text-lg font-bold text-zinc-800 flex items-center gap-2 mb-4">
-            <CloudLightning className={navigator.onLine ? "text-blue-500" : "text-zinc-400"} /> 
-            Estado da Conexão
+            <CloudLightning className={navigator.onLine ? "text-blue-500" : "text-zinc-400"} /> Estado da Conexão
           </h3>
-          <p className="text-zinc-600 text-sm mb-6">
-            O sistema envia automaticamente as vendas para a nuvem. Podes forçar o envio se necessário.
-          </p>
-          <button 
-            onClick={forcarSincronizacao}
-            disabled={!navigator.onLine}
-            className={`w-full p-3 rounded flex justify-center items-center gap-2 transition-all font-bold ${
-              navigator.onLine ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-zinc-200 text-zinc-500 cursor-not-allowed'
-            }`}
-          >
+          <p className="text-sm mb-6">Sincroniza os dados automaticamente assim que deteta internet.</p>
+          <button onClick={forcarSincronizacao} disabled={!navigator.onLine} className={`w-full p-3 rounded font-bold ${navigator.onLine ? 'bg-blue-600 text-white' : 'bg-zinc-200 text-zinc-500'}`}>
             Forçar Sincronização Agora
           </button>
         </div>
 
         <div className="bg-white border border-zinc-200 p-6 rounded-lg shadow-sm">
           <h3 className="text-lg font-bold text-zinc-800 flex items-center gap-2 mb-4">
-            <DownloadCloud className="text-orange-500" /> 
-            Recuperação de Emergência
+            <DownloadCloud className="text-orange-500" /> Recuperação
           </h3>
-          <p className="text-zinc-600 text-sm mb-6">
-            Se este for um computador novo ou os dados locais foram apagados, descarrega a tua loja da nuvem.
-          </p>
-          <button 
-            onClick={restaurarDaNuvem}
-            className="w-full bg-white border-2 border-orange-500 text-orange-600 hover:bg-orange-50 font-bold p-3 rounded flex justify-center items-center gap-2 transition-all"
-          >
-            Reconstruir Base de Dados Local
+          <p className="text-sm mb-6">Substitui os dados locais pelos oficiais guardados na nuvem.</p>
+          <button onClick={restaurarDaNuvem} className="w-full border-2 border-orange-500 text-orange-600 font-bold p-3 rounded">
+            Reconstruir Base de Dados
           </button>
         </div>
       </div>
 
       <div className="mt-6 flex justify-between items-center bg-white border border-zinc-200 p-4 rounded-lg">
-        <span className="text-sm font-mono">{status || 'Sistema Operacional'}</span>
-        <button 
-          onClick={async () => {
-            await db.sistema.delete('config_loja');
-            setLojaAtual(null);
-            await supabase.auth.signOut();
-          }}
-          className="text-sm text-red-500 hover:text-red-700 font-bold flex items-center gap-1"
-        >
+        <span className="text-sm font-mono">{status}</span>
+        <button onClick={async () => { await db.sistema.delete('config_loja'); setLojaAtual(null); await supabase.auth.signOut(); }} className="text-sm text-red-500 font-bold flex items-center gap-1">
           <LogIn size={16} /> Terminar Sessão
         </button>
       </div>
