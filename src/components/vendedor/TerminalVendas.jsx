@@ -326,41 +326,98 @@ export function TerminalVendas() {
     }
   };
 
-  const exportarHistoricoVendedorPDF = () => {
-    const doc = new jsPDF();
-    doc.setFontSize(20);
-    doc.setTextColor(249, 115, 22);
-    doc.text("VULPE MART", 14, 22);
+const exportarHistoricoVendedorPDF = () => {
+    // Configura o PDF para uma largura de "rolo" de 80mm e comprimento dinâmico consoante o volume de vendas.
+    // Como a impressora térmica rola o papel, vamos definir uma página única super comprida.
+    const alturaEstimada = 100 + (vendasOrdenadas.length * 15);
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: [80, alturaEstimada > 150 ? alturaEstimada : 150] // Largura de rolo padrão 80mm
+    });
 
-    doc.setFontSize(12);
-    doc.setTextColor(50, 50, 50);
-    doc.text("Histórico Geral de Vendas (Operador)", 14, 30);
-    doc.setFontSize(10);
-    doc.text(`Data de Emissão: ${new Date().toLocaleString("pt-MZ")}`, 14, 36);
-    doc.text(`Total de Registos: ${vendasOrdenadas.length}`, 14, 42);
+    // Centralizar as linhas de cabeçalho
+    const centralizarTexto = (texto, y, tamanho, isBold = false) => {
+      doc.setFontSize(tamanho);
+      if (isBold) {
+        doc.setFont("helvetica", "bold");
+      } else {
+        doc.setFont("helvetica", "normal");
+      }
+      const larguraTexto = doc.getTextWidth(texto);
+      doc.text(texto, (80 - larguraTexto) / 2, y);
+    };
+
+    doc.setTextColor(0, 0, 0); // Texto preto para a impressora térmica
+
+    // CABEÇALHO (Centrado)
+    centralizarTexto("VULPE MART", 12, 16, true);
+    centralizarTexto("MERCEARIA E CONVENIÊNCIA", 16, 9, true);
+    centralizarTexto("Chimoio, Manica. Contacto: 845773342.", 20, 8);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(`Data: ${new Date().toLocaleString("pt-MZ")}`, 4, 30);
+    doc.text(`Op: Vendedor`, 4, 34);
+    doc.text(`Total de Registos: ${vendasOrdenadas.length}`, 4, 38);
+
+    // Linha tracejada simulada
+    doc.text("----------------------------------------------------------------", 4, 42);
 
     const tableData = vendasOrdenadas.map((v) => [
-      new Date(v.data || v.data_venda).toLocaleString("pt-MZ"),
-      v.itens?.map((i) => `${i.quantidade}x ${i.nome}`).join("\n") || "S/ Detalhes",
-      `${Number(v.total || v.totalVenda || 0).toFixed(2)} MT`, 
+      new Date(v.data || v.data_venda).toLocaleString("pt-MZ").replace(", ", "\n"), // Quebra a data para caber
+      v.itens?.map((i) => `${i.quantidade}x ${i.nome}`).join("\n") || "S/ Det",
+      `${Number(v.total || v.totalVenda || 0).toFixed(2)} MT`,
     ]);
 
     doc.autoTable({
-      startY: 50,
-      head: [["Data e Hora", "Artigos Vendidos", "Total Recebido"]],
+      startY: 46,
+      head: [["Data", "Artigos", "Total"]],
       body: tableData,
-      theme: "grid",
-      headStyles: { fillColor: [249, 115, 22] },
-      styles: { fontSize: 8, cellPadding: 3 },
-      columnStyles: {
-        0: { cellWidth: 40 },
-        1: { cellWidth: "auto" },
-        2: { cellWidth: 30, halign: "right" },
+      theme: "plain", // Impressoras térmicas não lidam bem com temas coloridos (grid/striped)
+      styles: { 
+        fontSize: 7, 
+        cellPadding: 1, 
+        textColor: 0, // Tudo preto
+        font: "helvetica",
+        overflow: 'linebreak'
       },
+      headStyles: { 
+        fontStyle: "bold",
+        textColor: 0,
+        lineWidth: 0.2, // Apenas uma linha no cabeçalho
+        lineColor: 0
+      },
+      columnStyles: {
+        0: { cellWidth: 20 },
+        1: { cellWidth: "auto" },
+        2: { cellWidth: 20, halign: "right", fontStyle: "bold" },
+      },
+      margin: { top: 0, left: 4, right: 4, bottom: 4 }, // Margens super curtas (4mm) para evitar cortes
+      tableWidth: 72 // 80mm largura - (4mm left + 4mm right margin) = 72mm
     });
+    
+
+    const finalY = doc.lastAutoTable.finalY + 5;
+    
+    doc.text("----------------------------------------------------------------", 4, finalY);
+    
+    // TOTAL GERAL DO HISTÓRICO NO FIM DO ROLO
+    const totalGeral = vendasOrdenadas.reduce((acc, v) => acc + Number(v.total || v.totalVenda || 0), 0);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("TOTAL RECEBIDO MT:", 4, finalY + 8);
+    const textoTotal = `${totalGeral.toFixed(2)}`;
+    const larguraTotal = doc.getTextWidth(textoTotal);
+    doc.text(textoTotal, 76 - larguraTotal, finalY + 8); // Alinhado à direita respeitando a margem
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    centralizarTexto("Obrigado pela preferência!", finalY + 16, 7);
 
     doc.save(`Historico_Vendas_VulpeMart.pdf`);
   };
+
 
   return (
     <div className="flex flex-col md:flex-row h-full min-h-screen bg-zinc-50 text-zinc-900 font-sans relative">
@@ -581,6 +638,8 @@ export function TerminalVendas() {
             />
           </div>
         </div>
+
+        
 
         {/* Vitrine de Produtos */}
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 flex-1 overflow-y-auto pb-6 custom-scrollbar pr-2">
