@@ -97,14 +97,21 @@ export function BackupGlobal() {
         if (!lojaId) return setStatus('⚠️ Conta autenticada, mas nenhuma loja encontrada.');
         setStatus('✅ Login efetuado!');
       } else {
-        const { error: authError } = await supabase.auth.signUp({ email, password: senha });
+        // Fluxo de Registo com Verificação Prévia de Chave
+        const { data: chaveValida, error: erroCheck } = await supabase.rpc('verificar_chave', { p_chave: chave });
+        
+        if (erroCheck || !chaveValida) {
+          return setStatus('🚨 Erro: A Chave de Licença é inválida ou já foi utilizada.');
+        }
+
+        const { data: authData, error: authError } = await supabase.auth.signUp({ email, password: senha });
         if (authError) throw authError;
 
         const { data: rpcData, error: rpcError } = await supabase.rpc('registar_loja_com_chave', {
           p_nome_loja: nomeLoja, p_chave: chave
         });
         
-        if (rpcError) return setStatus(`🚨 Erro na licença: ${rpcError.message}`);
+        if (rpcError) return setStatus(`🚨 Erro ao registar a loja: ${rpcError.message}`);
 
         await db.sistema.put({ id: 'config_loja', loja_id: rpcData.loja_id, nome_loja: nomeLoja });
         setLojaAtual({ id: rpcData.loja_id, nome: nomeLoja });
@@ -311,4 +318,6 @@ export function BackupGlobal() {
       </div>
     </div>
   );
+
+  
 }
