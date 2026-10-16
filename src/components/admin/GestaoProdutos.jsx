@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { db } from "../../db";
+import { supabase } from "../../services/supabase"; // Importação do Supabase
 import { useLiveQuery } from "dexie-react-hooks";
 import { Edit, Trash2, X } from "lucide-react";
 
@@ -103,25 +104,76 @@ export function GestaoProdutos() {
         precoVenda: pVenda,
         precoCusto: pCusto,
         stock: pStock,
-        unidadeMedida
+        unidadeMedida,
+        sincronizado: 0 // FALHA 1 CORRIGIDA: Garante a marcação para envio
       };
 
+      let idLocalAtual = produtoEmEdicao;
+
+      // 1. Grava no Dexie Local
       if (produtoEmEdicao) {
         await db.produtos.update(produtoEmEdicao, dadosProduto);
       } else {
-        await db.produtos.add(dadosProduto);
+        idLocalAtual = await db.produtos.add(dadosProduto);
       }
       cancelarEdicao();
+
+      // 2. SINCRONIZAÇÃO INSTANTÂNEA: Se houver internet, envia de imediato para a nuvem
+      if (navigator.onLine) {
+        const configLocal = await db.sistema.get('config_loja');
+        if (configLocal?.loja_id) {
+          const payloadNuvem = {
+            loja_id: configLocal.loja_id,
+            codigo: pCodigo,
+            nome: pNome,
+            categoria,
+            subcategoria,
+            preco_venda: pVenda,
+            preco_custo: pCusto,
+            stock: pStock,
+            unidade_medida: unidadeMedida
+          };
+
+          const { error } = await supabase
+            .from('produtos')
+            .upsert([payloadNuvem], { onConflict: 'loja_id, codigo' });
+
+          // Se a nuvem confirmou a receção, marca localmente como sincronizado
+          if (!error) {
+            await db.produtos.update(idLocalAtual, { sincronizado: 1 });
+          }
+        }
+      }
     } catch (err) {
       setErro("Erro ao guardar o produto. Verifica se há duplicação de registos.");
     }
   };
 
   const apagarProduto = async (id) => {
-    const confirmar = window.confirm("Tens a certeza que queres apagar este artigo? Esta ação não pode ser desfeita.");
-    if (confirmar) {
+    const confirmar = window.confirm("Tens a certeza que queres apagar este artigo? A ação será definitiva na nuvem.");
+    if (!confirmar) return;
+
+    try {
+      // 1. Recolhe os dados do produto ANTES de o apagar localmente
+      const produtoParaApagar = await db.produtos.get(id);
+
+      // 2. Apaga localmente
       await db.produtos.delete(id);
       if (produtoEmEdicao === id) cancelarEdicao();
+
+      // 3. FALHA 2 CORRIGIDA: Apaga na nuvem imediatamente para evitar o efeito Zombie
+      if (navigator.onLine && produtoParaApagar) {
+        const configLocal = await db.sistema.get('config_loja');
+        if (configLocal?.loja_id) {
+          await supabase
+            .from('produtos')
+            .delete()
+            .eq('loja_id', configLocal.loja_id)
+            .eq('codigo', produtoParaApagar.codigo);
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao apagar produto na nuvem:", err);
     }
   };
 
