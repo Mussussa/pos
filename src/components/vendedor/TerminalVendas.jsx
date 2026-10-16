@@ -144,7 +144,7 @@ export function TerminalVendas() {
 
   const vendasOrdenadas = useMemo(() => {
     if (!vendas) return [];
-    return [...vendas].sort((a, b) => new Date(b.data) - new Date(a.data));
+    return [...vendas].sort((a, b) => new Date(b.data || b.data_venda) - new Date(a.data || a.data_venda));
   }, [vendas]);
 
   const totalPaginasHistorico = Math.ceil(
@@ -209,7 +209,8 @@ export function TerminalVendas() {
           let novaQtd = item.quantidade;
 
           if (!isNaN(valorMT) && valorMT >= 0) {
-            let pesoCalculado = Number((valorMT / item.precoVenda).toFixed(3));
+            const precoSeguro = Number(item.precoVenda || 1);
+            let pesoCalculado = Number((valorMT / precoSeguro).toFixed(3));
             novaQtd = Math.min(pesoCalculado, item.stock);
           }
 
@@ -263,21 +264,25 @@ export function TerminalVendas() {
 
   const totalVenda = carrinho.reduce((acc, item) => {
     const qtd = parseFloat(item.quantidade) || 0;
-    return acc + item.precoVenda * qtd;
+    const precoUnitario = Number(item.precoVenda || 0);
+    return acc + precoUnitario * qtd;
   }, 0);
 
   const finalizarVenda = async () => {
     if (carrinho.length === 0) return;
     const lucroTotal = carrinho.reduce((acc, item) => {
       const qtd = parseFloat(item.quantidade) || 0;
-      return acc + (item.precoVenda - item.precoCusto) * qtd;
+      const precoV = Number(item.precoVenda || 0);
+      const precoC = Number(item.precoCusto || 0);
+      return acc + (precoV - precoC) * qtd;
     }, 0);
 
     const novaVenda = {
       data: new Date().toISOString(),
-      vendedorId: 1,
-      totalVenda,
+      vendedorId: 1, 
+      total: totalVenda, 
       lucroTotal,
+      sincronizado: 0, 
       itens: carrinho.map((item) => {
         let qtdFinal = parseFloat(item.quantidade);
         if (isNaN(qtdFinal) || qtdFinal <= 0) qtdFinal = 1;
@@ -286,7 +291,7 @@ export function TerminalVendas() {
           nome: item.nome,
           codigo: item.codigo || "",
           quantidade: qtdFinal,
-          preco: item.precoVenda,
+          preco: Number(item.precoVenda || 0),
         };
       }),
     };
@@ -296,15 +301,25 @@ export function TerminalVendas() {
         await db.vendas.add(novaVenda);
         for (const item of novaVenda.itens) {
           const prodDB = await db.produtos.get(item.produtoId);
-          await db.produtos.update(item.produtoId, {
-            stock: prodDB.stock - item.quantidade,
-          });
+          if (prodDB) {
+            await db.produtos.update(item.produtoId, {
+              stock: prodDB.stock - item.quantidade,
+              sincronizado: 0 
+            });
+          }
         }
       });
+      
       if (imprimirRecibo) {
         window.print();
       }
       setCarrinho([]);
+
+      // O GATILHO DA NUVEM: Acorda o motor invisível se houver internet
+      if (navigator.onLine) {
+        window.dispatchEvent(new Event('online'));
+      }
+      
     } catch (error) {
       alert("Erro ao processar a venda.");
       console.error(error);
@@ -325,10 +340,9 @@ export function TerminalVendas() {
     doc.text(`Total de Registos: ${vendasOrdenadas.length}`, 14, 42);
 
     const tableData = vendasOrdenadas.map((v) => [
-      new Date(v.data).toLocaleString("pt-MZ"),
-      v.itens?.map((i) => `${i.quantidade}x ${i.nome}`).join("\n") ||
-        "S/ Detalhes",
-      `${v.totalVenda.toFixed(2)} MT`,
+      new Date(v.data || v.data_venda).toLocaleString("pt-MZ"),
+      v.itens?.map((i) => `${i.quantidade}x ${i.nome}`).join("\n") || "S/ Detalhes",
+      `${Number(v.total || v.totalVenda || 0).toFixed(2)} MT`, 
     ]);
 
     doc.autoTable({
@@ -395,7 +409,7 @@ export function TerminalVendas() {
                       className="hover:bg-orange-50/50 transition-colors"
                     >
                       <td className="p-3 md:p-4 text-zinc-700 whitespace-nowrap font-medium">
-                        {new Date(v.data).toLocaleString("pt-MZ", {
+                        {new Date(v.data || v.data_venda).toLocaleString("pt-MZ", {
                           day: "2-digit",
                           month: "short",
                           hour: "2-digit",
@@ -412,7 +426,7 @@ export function TerminalVendas() {
                         </ul>
                       </td>
                       <td className="p-3 md:p-4 font-black text-orange-600 text-right text-base md:text-lg">
-                        {v.totalVenda.toFixed(2)} MT
+                        {Number(v.total || v.totalVenda || 0).toFixed(2)} MT
                       </td>
                     </tr>
                   ))}
@@ -463,8 +477,9 @@ export function TerminalVendas() {
         </div>
       )}
 
-      {/* Esquerda: Vitrine e Filtros - Ajuste de proporção para lg:[65%] */}
+      {/* Esquerda: Vitrine e Filtros */}
       <div className="w-full md:w-3/5 lg:w-[65%] p-4 md:p-6 flex flex-col h-screen md:h-full overflow-hidden print:hidden border-b md:border-b-0 md:border-r border-zinc-200">
+        
         {/* Letreiro de Giro */}
         <div className="mb-4 md:mb-6 bg-white border border-orange-200 rounded-xl p-3 md:p-4 shadow-sm flex items-center gap-3 md:gap-4 shrink-0">
           <span className="bg-orange-500 text-white text-xs md:text-sm font-bold uppercase px-2 py-1.5 md:px-3 md:py-2 rounded shrink-0 animate-pulse">
@@ -480,7 +495,7 @@ export function TerminalVendas() {
                 >
                   ⭐ <strong className="text-base md:text-lg">{p.nome}</strong>{" "}
                   <span className="text-zinc-400">
-                    ({p.precoVenda.toFixed(2)} MT)
+                    ({Number(p.precoVenda || 0).toFixed(2)} MT)
                   </span>
                 </span>
               ))
@@ -567,9 +582,9 @@ export function TerminalVendas() {
           </div>
         </div>
 
-        {/* Vitrine de Produtos - Grelha melhorada (2 colunas em lg, 3 em xl) */}
-<div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 flex-1 overflow-y-auto pb-6 custom-scrollbar pr-2">
-          {produtosVitrine?.map(p => (
+        {/* Vitrine de Produtos */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 flex-1 overflow-y-auto pb-6 custom-scrollbar pr-2">
+          {produtosVitrine?.map((p) => (
             <button 
               key={p.id}
               onClick={() => adicionarAoCarrinho(p)}
@@ -587,7 +602,7 @@ export function TerminalVendas() {
               
               <div className="flex flex-wrap justify-between items-end mt-auto pt-1.5 w-full gap-1">
                 <span className="text-[9px] md:text-[10px] font-bold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded whitespace-nowrap">Stk: {p.stock}</span>
-                <span className="font-black text-orange-600 text-sm md:text-base leading-none whitespace-nowrap">{p.precoVenda.toFixed(2)} <span className="text-[9px] md:text-[10px] text-orange-400">MT</span></span>
+                <span className="font-black text-orange-600 text-sm md:text-base leading-none whitespace-nowrap">{Number(p.precoVenda || 0).toFixed(2)} <span className="text-[9px] md:text-[10px] text-orange-400">MT</span></span>
               </div>
             </button>
           ))}
@@ -600,7 +615,7 @@ export function TerminalVendas() {
         </div>
       </div>
 
-      {/* Direita: Carrinho - Ajuste de proporção para lg:[35%] */}
+      {/* Direita: Carrinho */}
       <div className="w-full md:w-2/5 lg:w-[35%] bg-white border-l border-zinc-200 p-4 md:p-6 flex flex-col h-auto md:h-screen shadow-2xl z-10 print:hidden overflow-hidden">
         <h3 className="text-xl md:text-2xl font-black text-zinc-800 mb-4 md:mb-6 flex items-center gap-3 shrink-0">
           <ShoppingCart className="text-orange-500" size={24} /> Carrinho Atual
@@ -618,7 +633,7 @@ export function TerminalVendas() {
                 </span>
                 <span className="font-black text-orange-600 text-lg md:text-xl whitespace-nowrap">
                   {(
-                    item.precoVenda * (parseFloat(item.quantidade) || 0)
+                    Number(item.precoVenda || 0) * (parseFloat(item.quantidade) || 0)
                   ).toFixed(2)}{" "}
                   MT
                 </span>
@@ -626,7 +641,7 @@ export function TerminalVendas() {
 
               <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center mt-3 gap-3">
                 <span className="text-sm md:text-base font-bold text-zinc-500">
-                  {item.precoVenda.toFixed(2)} / {item.unidadeMedida || "un"}
+                  {Number(item.precoVenda || 0).toFixed(2)} / {item.unidadeMedida || "un"}
                 </span>
 
                 <div className="flex items-center gap-1 sm:gap-2 bg-white border-2 border-zinc-200 rounded-xl p-1 shadow-sm w-full sm:w-auto justify-between sm:justify-start">
@@ -710,7 +725,7 @@ export function TerminalVendas() {
                             ? ""
                             : Number(
                                 (
-                                  parseFloat(item.quantidade) * item.precoVenda
+                                  parseFloat(item.quantidade) * Number(item.precoVenda || 0)
                                 ).toFixed(2),
                               )
                       }
@@ -811,7 +826,7 @@ export function TerminalVendas() {
                     <td className="align-top pr-1">{item.nome}</td>
                     <td className="align-top text-right">
                       {(
-                        item.precoVenda * (isNaN(itemQtd) ? 1 : itemQtd)
+                        Number(item.precoVenda || 0) * (isNaN(itemQtd) ? 1 : itemQtd)
                       ).toFixed(2)}
                     </td>
                   </tr>

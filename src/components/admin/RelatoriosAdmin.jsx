@@ -69,16 +69,17 @@ function ModuloPrecoMinimo({ produtos }) {
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {produtosPaginados.map(p => {
-              const precoMinimo = p.precoCusto * 1.10; 
-              const alertaPrejuizo = p.precoVenda < precoMinimo;
+              const precoMinimo = Number(p.precoCusto || 0) * 1.10; 
+              const precoVendaAtual = Number(p.precoVenda || 0);
+              const alertaPrejuizo = precoVendaAtual < precoMinimo;
 
               return (
                 <tr key={p.id} className="hover:bg-orange-50 transition-colors">
                   <td className="p-3 text-zinc-800 font-medium">{p.nome}</td>
-                  <td className="p-3 text-zinc-500">{p.precoCusto.toFixed(2)} MT</td>
+                  <td className="p-3 text-zinc-500">{Number(p.precoCusto || 0).toFixed(2)} MT</td>
                   <td className="p-3 font-bold text-orange-500">{precoMinimo.toFixed(2)} MT</td>
                   <td className={`p-3 font-bold ${alertaPrejuizo ? 'text-red-500' : 'text-zinc-800'}`}>
-                    {p.precoVenda.toFixed(2)} MT 
+                    {precoVendaAtual.toFixed(2)} MT 
                     {alertaPrejuizo && (
                       <span className="ml-2 text-xs font-normal border border-red-200 bg-red-50 px-2 py-1 rounded text-red-600">
                         Risco de Prejuízo
@@ -145,7 +146,7 @@ export function RelatoriosAdmin() {
     inicio7Dias.setDate(inicio7Dias.getDate() - 7);
 
     return vendasRaw.filter(v => {
-      const dataVenda = new Date(v.data);
+      const dataVenda = new Date(v.data || v.data_venda); // Garante suporte a ambas propriedades de data
       if (filtroTempo === 'hoje') return dataVenda >= inicioHoje;
       if (filtroTempo === 'ontem') return dataVenda >= inicioOntem && dataVenda < inicioHoje;
       if (filtroTempo === '7dias') return dataVenda >= inicio7Dias;
@@ -153,9 +154,9 @@ export function RelatoriosAdmin() {
     });
   }, [vendasRaw, filtroTempo]);
 
-  // 2. Cálculos Gerais
-  const totalReceitas = vendas.reduce((acc, venda) => acc + (venda.totalVenda || 0), 0);
-  const totalLucro = vendas.reduce((acc, venda) => acc + (venda.lucroTotal || 0), 0);
+  // 2. Cálculos Gerais (CORRIGIDO com .total || .totalVenda)
+  const totalReceitas = vendas.reduce((acc, venda) => acc + Number(venda.total || venda.totalVenda || 0), 0);
+  const totalLucro = vendas.reduce((acc, venda) => acc + Number(venda.lucroTotal || 0), 0);
   const numeroVendas = vendas.length;
 
   // 3. Processamento para Gráficos
@@ -169,17 +170,17 @@ export function RelatoriosAdmin() {
   const prodCat = {};
   produtos?.forEach(p => {
     prodCat[p.id] = p.categoria;
-    if (categoriasMap[p.categoria]) categoriasMap[p.categoria].stock += p.stock;
+    if (categoriasMap[p.categoria]) categoriasMap[p.categoria].stock += Number(p.stock || 0);
   });
 
   const contagemProdutos = {};
   vendas.forEach(v => {
     v.itens?.forEach(item => {
       const cat = prodCat[item.produtoId];
-      if (cat && categoriasMap[cat]) categoriasMap[cat].vendido += item.quantidade;
+      if (cat && categoriasMap[cat]) categoriasMap[cat].vendido += Number(item.quantidade || 0);
       
       if (!contagemProdutos[item.nome]) contagemProdutos[item.nome] = 0;
-      contagemProdutos[item.nome] += item.quantidade;
+      contagemProdutos[item.nome] += Number(item.quantidade || 0);
     });
   });
 
@@ -191,14 +192,14 @@ export function RelatoriosAdmin() {
 
   const vendasPorDia = {};
   [...vendas].reverse().forEach(v => {
-    const dataCurta = new Date(v.data).toLocaleDateString('pt-MZ', { day: '2-digit', month: '2-digit' });
+    const dataCurta = new Date(v.data || v.data_venda).toLocaleDateString('pt-MZ', { day: '2-digit', month: '2-digit' });
     if (!vendasPorDia[dataCurta]) vendasPorDia[dataCurta] = { data: dataCurta, receita: 0, lucro: 0 };
-    vendasPorDia[dataCurta].receita += v.totalVenda;
-    vendasPorDia[dataCurta].lucro += v.lucroTotal;
+    vendasPorDia[dataCurta].receita += Number(v.total || v.totalVenda || 0);
+    vendasPorDia[dataCurta].lucro += Number(v.lucroTotal || 0);
   });
   const dadosEvolucao = Object.values(vendasPorDia);
 
-  // 5. Função de Exportação para PDF (Agora com Vendas e Stock)
+  // 5. Função de Exportação para PDF (CORRIGIDO)
   const exportarPDF = () => {
     const doc = new jsPDF();
     
@@ -231,10 +232,10 @@ export function RelatoriosAdmin() {
     doc.text("1. Histórico de Transações", 14, 76);
 
     const tableDataVendas = vendas.map(v => [
-      new Date(v.data).toLocaleString('pt-MZ'),
+      new Date(v.data || v.data_venda).toLocaleString('pt-MZ'),
       v.itens?.map(i => `${i.quantidade}x ${i.nome}`).join('\n') || 'S/ Detalhes',
-      `${v.totalVenda.toFixed(2)} MT`,
-      `${v.lucroTotal.toFixed(2)} MT`
+      `${Number(v.total || v.totalVenda || 0).toFixed(2)} MT`,
+      `${Number(v.lucroTotal || 0).toFixed(2)} MT`
     ]);
 
     autoTable(doc, {
@@ -252,10 +253,8 @@ export function RelatoriosAdmin() {
       }
     });
 
-    // Posição Y onde a tabela de vendas terminou
     let finalY = doc.lastAutoTable.finalY + 15;
 
-    // Se não houver espaço suficiente para o título da próxima tabela, cria uma nova página
     if (finalY > 260) {
       doc.addPage();
       finalY = 20;
@@ -269,11 +268,11 @@ export function RelatoriosAdmin() {
     doc.text("2. Posição Atual de Stock", 14, finalY);
 
     const tableDataStock = produtos?.map(p => [
-      p.nome,
-      p.categoria.toUpperCase(),
-      `${p.stock}`,
-      `${p.precoCusto.toFixed(2)} MT`,
-      `${p.precoVenda.toFixed(2)} MT`
+      p.nome || '',
+      p.categoria?.toUpperCase() || '',
+      `${p.stock || 0}`,
+      `${Number(p.precoCusto || 0).toFixed(2)} MT`,
+      `${Number(p.precoVenda || 0).toFixed(2)} MT`
     ]) || [];
 
     autoTable(doc, {
@@ -281,7 +280,7 @@ export function RelatoriosAdmin() {
       head: [['Produto', 'Categoria', 'Quantidade em Stock', 'P. Custo', 'P. Venda']],
       body: tableDataStock,
       theme: 'grid',
-      headStyles: { fillColor: [82, 82, 91] }, // Cinza escuro para diferenciar da tabela de vendas
+      headStyles: { fillColor: [82, 82, 91] }, 
       styles: { fontSize: 8, cellPadding: 3 },
       columnStyles: {
         0: { cellWidth: 'auto' },
@@ -368,7 +367,9 @@ export function RelatoriosAdmin() {
             <tbody className="divide-y divide-zinc-100 text-sm">
               {vendas.map(v => (
                 <tr key={v.id} className="hover:bg-orange-50/50">
-                  <td className="p-3 text-zinc-700 whitespace-nowrap">{new Date(v.data).toLocaleString('pt-MZ')}</td>
+                  <td className="p-3 text-zinc-700 whitespace-nowrap">
+                    {new Date(v.data || v.data_venda).toLocaleString('pt-MZ')}
+                  </td>
                   <td className="p-3 text-zinc-600">
                     <ul className="list-disc list-inside">
                       {v.itens?.map((i, idx) => (
@@ -376,8 +377,12 @@ export function RelatoriosAdmin() {
                       ))}
                     </ul>
                   </td>
-                  <td className="p-3 font-bold text-zinc-800 text-right">{v.totalVenda.toFixed(2)} MT</td>
-                  <td className="p-3 text-orange-600 font-bold text-right">{v.lucroTotal.toFixed(2)} MT</td>
+                  <td className="p-3 font-bold text-zinc-800 text-right">
+                    {Number(v.total || v.totalVenda || 0).toFixed(2)} MT
+                  </td>
+                  <td className="p-3 text-orange-600 font-bold text-right">
+                    {Number(v.lucroTotal || 0).toFixed(2)} MT
+                  </td>
                 </tr>
               ))}
               {vendas.length === 0 && (
