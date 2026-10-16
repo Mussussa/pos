@@ -93,25 +93,34 @@ export function BackupGlobal() {
       if (isLogin) {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
         if (error) throw error;
+        
         const lojaId = await obterOuRecuperarLoja(data.user.id);
-        if (!lojaId) return setStatus('⚠️ Conta autenticada, mas nenhuma loja encontrada.');
+        if (!lojaId) {
+          await supabase.auth.signOut();
+          return setStatus('⚠️ Conta sem loja associada. Regista-te primeiro com uma chave.');
+        }
         setStatus('✅ Login efetuado!');
       } else {
-        // Fluxo de Registo com Verificação Prévia de Chave
+        // 1. BARREIRA DE SEGURANÇA: Verifica a chave ANTES de criar o utilizador
         const { data: chaveValida, error: erroCheck } = await supabase.rpc('verificar_chave', { p_chave: chave });
         
         if (erroCheck || !chaveValida) {
-          return setStatus('🚨 Erro: A Chave de Licença é inválida ou já foi utilizada.');
+          return setStatus('🚨 Erro: A Chave de Licença é inválida ou já foi utilizada.'); // Aborta aqui e não sai da tela!
         }
 
+        // 2. Chave válida! Agora sim, cria a conta no Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.signUp({ email, password: senha });
         if (authError) throw authError;
 
+        // 3. Regista a loja e queima a chave
         const { data: rpcData, error: rpcError } = await supabase.rpc('registar_loja_com_chave', {
           p_nome_loja: nomeLoja, p_chave: chave
         });
         
-        if (rpcError) return setStatus(`🚨 Erro ao registar a loja: ${rpcError.message}`);
+        if (rpcError) {
+          await supabase.auth.signOut(); // Limpa se houver erro interno
+          return setStatus(`🚨 Erro ao registar a loja: ${rpcError.message}`);
+        }
 
         await db.sistema.put({ id: 'config_loja', loja_id: rpcData.loja_id, nome_loja: nomeLoja });
         setLojaAtual({ id: rpcData.loja_id, nome: nomeLoja });
@@ -318,6 +327,4 @@ export function BackupGlobal() {
       </div>
     </div>
   );
-
-  
 }
