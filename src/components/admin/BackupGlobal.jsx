@@ -138,7 +138,7 @@ export function BackupGlobal() {
     }
   };
 
-  // 2. MOTOR DE SINCRONIZAÇÃO (Roda sem o utilizador ver)
+// 2. MOTOR DE SINCRONIZAÇÃO (Roda sem o utilizador ver)
   const executarSincronizacaoSilenciosa = async (lojaIdForcada = null) => {
     if (!navigator.onLine) return;
 
@@ -171,12 +171,19 @@ export function BackupGlobal() {
       const vendasPendentes = await db.vendas.filter(v => !v.sincronizado).toArray();
       if (vendasPendentes.length > 0) {
         const payloadVendas = vendasPendentes.map(v => {
-          const valorCalculado = Number(v.total ?? v.valor ?? v.precoTotal ?? v.subtotal ?? 0);
+          // Extrai o valor real, suportando várias nomenclaturas possíveis
+          let valorCalculado = Number(v.total ?? v.valor ?? v.precoTotal ?? v.subtotal ?? v.valor_total ?? 0);
+          
+          // Fallback de segurança: Se for inválido, garante que envia 0 em vez de null
+          if (isNaN(valorCalculado) || valorCalculado === null || valorCalculado === undefined) {
+             valorCalculado = 0;
+          }
+
           return {
             loja_id: lojaId,
             data_venda: v.data ? new Date(v.data).toISOString() : new Date().toISOString(),
             vendedor_id: String(v.vendedorId || v.vendedor || 'admin'),
-            total: isNaN(valorCalculado) ? 0 : valorCalculado,
+            total: valorCalculado, // Valor garantidamente numérico
             itens: v.itens || v.produtos || v.cart || []
           };
         });
@@ -186,10 +193,13 @@ export function BackupGlobal() {
           await db.transaction('rw', db.vendas, async () => {
             for (const venda of vendasPendentes) await db.vendas.update(venda.id, { sincronizado: 1 });
           });
+        } else {
+             throw erroVendas; // Dispara erro visível se o insert falhar
         }
       }
     } catch (err) {
       console.error('Erro sincronização background:', err);
+      throw err; // Repassa erro para a função forcarSincronizacao mostrar
     }
   };
 
@@ -197,8 +207,12 @@ export function BackupGlobal() {
   const forcarSincronizacao = async () => {
     if (!navigator.onLine) return setStatus('⚠️ Estás offline.');
     setStatus('A sincronizar com a nuvem...');
-    await executarSincronizacaoSilenciosa();
-    setStatus('✅ Sincronização concluída com sucesso!');
+    try {
+        await executarSincronizacaoSilenciosa();
+        setStatus('✅ Sincronização concluída com sucesso!');
+    } catch (err) {
+        setStatus(`🚨 Erro: ${err.message}`);
+    }
   };
 
   // 3. RECUPERAÇÃO DE EMERGÊNCIA
