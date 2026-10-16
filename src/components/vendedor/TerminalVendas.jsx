@@ -144,7 +144,7 @@ export function TerminalVendas() {
 
   const vendasOrdenadas = useMemo(() => {
     if (!vendas) return [];
-    return [...vendas].sort((a, b) => new Date(b.data) - new Date(a.data));
+    return [...vendas].sort((a, b) => new Date(b.data || b.data_venda) - new Date(a.data || a.data_venda));
   }, [vendas]);
 
   const totalPaginasHistorico = Math.ceil(
@@ -209,7 +209,6 @@ export function TerminalVendas() {
           let novaQtd = item.quantidade;
 
           if (!isNaN(valorMT) && valorMT >= 0) {
-            // Blindagem: Garante que precoVenda é um número válido para não dar Infinity
             const precoSeguro = Number(item.precoVenda || 1);
             let pesoCalculado = Number((valorMT / precoSeguro).toFixed(3));
             novaQtd = Math.min(pesoCalculado, item.stock);
@@ -280,10 +279,10 @@ export function TerminalVendas() {
 
     const novaVenda = {
       data: new Date().toISOString(),
-      vendedorId: 1, // Aqui idealmente colocarias o ID do vendedor logado
-      total: totalVenda, // CORREÇÃO: Guardar como 'total' para o Supabase reconhecer diretamente
+      vendedorId: 1, 
+      total: totalVenda, 
       lucroTotal,
-      sincronizado: 0, // CORREÇÃO: Obriga o MotorSincronizacao a enviar isto para a nuvem
+      sincronizado: 0, 
       itens: carrinho.map((item) => {
         let qtdFinal = parseFloat(item.quantidade);
         if (isNaN(qtdFinal) || qtdFinal <= 0) qtdFinal = 1;
@@ -305,7 +304,7 @@ export function TerminalVendas() {
           if (prodDB) {
             await db.produtos.update(item.produtoId, {
               stock: prodDB.stock - item.quantidade,
-              sincronizado: 0 // Marca o produto para abater stock na nuvem
+              sincronizado: 0 
             });
           }
         }
@@ -315,6 +314,12 @@ export function TerminalVendas() {
         window.print();
       }
       setCarrinho([]);
+
+      // O GATILHO DA NUVEM: Acorda o motor invisível se houver internet
+      if (navigator.onLine) {
+        window.dispatchEvent(new Event('online'));
+      }
+      
     } catch (error) {
       alert("Erro ao processar a venda.");
       console.error(error);
@@ -335,9 +340,9 @@ export function TerminalVendas() {
     doc.text(`Total de Registos: ${vendasOrdenadas.length}`, 14, 42);
 
     const tableData = vendasOrdenadas.map((v) => [
-      new Date(v.data).toLocaleString("pt-MZ"),
+      new Date(v.data || v.data_venda).toLocaleString("pt-MZ"),
       v.itens?.map((i) => `${i.quantidade}x ${i.nome}`).join("\n") || "S/ Detalhes",
-      `${Number(v.total || v.totalVenda || 0).toFixed(2)} MT`, // Blindagem contra undefined
+      `${Number(v.total || v.totalVenda || 0).toFixed(2)} MT`, 
     ]);
 
     doc.autoTable({
@@ -404,7 +409,7 @@ export function TerminalVendas() {
                       className="hover:bg-orange-50/50 transition-colors"
                     >
                       <td className="p-3 md:p-4 text-zinc-700 whitespace-nowrap font-medium">
-                        {new Date(v.data).toLocaleString("pt-MZ", {
+                        {new Date(v.data || v.data_venda).toLocaleString("pt-MZ", {
                           day: "2-digit",
                           month: "short",
                           hour: "2-digit",
