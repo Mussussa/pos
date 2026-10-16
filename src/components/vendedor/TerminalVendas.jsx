@@ -174,9 +174,7 @@ export function TerminalVendas() {
     });
   };
 
-
   const perfilLoja = useLiveQuery(() => db.sistema.get('perfil_loja'));
-
 
   const alterarQuantidade = (id, delta) => {
     setCarrinho((prev) =>
@@ -330,17 +328,14 @@ export function TerminalVendas() {
     }
   };
 
-const exportarHistoricoVendedorPDF = () => {
-    // Configura o PDF para uma largura de "rolo" de 80mm e comprimento dinâmico consoante o volume de vendas.
-    // Como a impressora térmica rola o papel, vamos definir uma página única super comprida.
+  const exportarHistoricoVendedorPDF = () => {
     const alturaEstimada = 100 + (vendasOrdenadas.length * 15);
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: [80, alturaEstimada > 150 ? alturaEstimada : 150] // Largura de rolo padrão 80mm
+      format: [80, alturaEstimada > 150 ? alturaEstimada : 150] 
     });
 
-    // Centralizar as linhas de cabeçalho
     const centralizarTexto = (texto, y, tamanho, isBold = false) => {
       doc.setFontSize(tamanho);
       if (isBold) {
@@ -352,9 +347,8 @@ const exportarHistoricoVendedorPDF = () => {
       doc.text(texto, (80 - larguraTexto) / 2, y);
     };
 
-    doc.setTextColor(0, 0, 0); // Texto preto para a impressora térmica
+    doc.setTextColor(0, 0, 0); 
 
-    // CABEÇALHO (Centrado)
     centralizarTexto("VULPE MART", 12, 16, true);
     centralizarTexto("MERCEARIA E CONVENIÊNCIA", 16, 9, true);
     centralizarTexto("Chimoio, Manica. Contacto: 845773342.", 20, 8);
@@ -365,11 +359,10 @@ const exportarHistoricoVendedorPDF = () => {
     doc.text(`Op: Vendedor`, 4, 34);
     doc.text(`Total de Registos: ${vendasOrdenadas.length}`, 4, 38);
 
-    // Linha tracejada simulada
     doc.text("----------------------------------------------------------------", 4, 42);
 
     const tableData = vendasOrdenadas.map((v) => [
-      new Date(v.data || v.data_venda).toLocaleString("pt-MZ").replace(", ", "\n"), // Quebra a data para caber
+      new Date(v.data || v.data_venda).toLocaleString("pt-MZ").replace(", ", "\n"), 
       v.itens?.map((i) => `${i.quantidade}x ${i.nome}`).join("\n") || "S/ Det",
       `${Number(v.total || v.totalVenda || 0).toFixed(2)} MT`,
     ]);
@@ -378,18 +371,18 @@ const exportarHistoricoVendedorPDF = () => {
       startY: 46,
       head: [["Data", "Artigos", "Total"]],
       body: tableData,
-      theme: "plain", // Impressoras térmicas não lidam bem com temas coloridos (grid/striped)
+      theme: "plain", 
       styles: { 
         fontSize: 7, 
         cellPadding: 1, 
-        textColor: 0, // Tudo preto
+        textColor: 0, 
         font: "helvetica",
         overflow: 'linebreak'
       },
       headStyles: { 
         fontStyle: "bold",
         textColor: 0,
-        lineWidth: 0.2, // Apenas uma linha no cabeçalho
+        lineWidth: 0.2, 
         lineColor: 0
       },
       columnStyles: {
@@ -397,23 +390,21 @@ const exportarHistoricoVendedorPDF = () => {
         1: { cellWidth: "auto" },
         2: { cellWidth: 20, halign: "right", fontStyle: "bold" },
       },
-      margin: { top: 0, left: 4, right: 4, bottom: 4 }, // Margens super curtas (4mm) para evitar cortes
-      tableWidth: 72 // 80mm largura - (4mm left + 4mm right margin) = 72mm
+      margin: { top: 0, left: 4, right: 4, bottom: 4 }, 
+      tableWidth: 72 
     });
     
-
     const finalY = doc.lastAutoTable.finalY + 5;
     
     doc.text("----------------------------------------------------------------", 4, finalY);
     
-    // TOTAL GERAL DO HISTÓRICO NO FIM DO ROLO
     const totalGeral = vendasOrdenadas.reduce((acc, v) => acc + Number(v.total || v.totalVenda || 0), 0);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.text("TOTAL RECEBIDO MT:", 4, finalY + 8);
     const textoTotal = `${totalGeral.toFixed(2)}`;
     const larguraTotal = doc.getTextWidth(textoTotal);
-    doc.text(textoTotal, 76 - larguraTotal, finalY + 8); // Alinhado à direita respeitando a margem
+    doc.text(textoTotal, 76 - larguraTotal, finalY + 8); 
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
@@ -421,7 +412,6 @@ const exportarHistoricoVendedorPDF = () => {
 
     doc.save(`Historico_Vendas_VulpeMart.pdf`);
   };
-
 
   return (
     <div className="flex flex-col md:flex-row h-full min-h-screen bg-zinc-50 text-zinc-900 font-sans relative">
@@ -643,8 +633,6 @@ const exportarHistoricoVendedorPDF = () => {
           </div>
         </div>
 
-        
-
         {/* Vitrine de Produtos */}
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 flex-1 overflow-y-auto pb-6 custom-scrollbar pr-2">
           {produtosVitrine?.map((p) => (
@@ -853,33 +841,49 @@ const exportarHistoricoVendedorPDF = () => {
         </div>
       </div>
 
-{/* Recibo Térmico de Impressão */}
-      <div className="hidden print:block absolute top-0 left-0 bg-white text-black p-4 font-mono w-[80mm] text-sm mx-auto">
+      {/* Estilos específicos para forçar o corte do papel na impressora térmica POS58 */}
+      <style type="text/css">
+        {`
+          @media print {
+            @page {
+              size: 58mm auto; /* Magia: Altura ajusta-se automaticamente ao texto! */
+              margin: 0;
+            }
+            body {
+              margin: 0;
+              padding: 0;
+            }
+          }
+        `}
+      </style>
+
+      {/* Recibo Térmico de Impressão (Ajustado para 58mm) */}
+      <div className="hidden print:block absolute top-0 left-0 bg-white text-black pt-2 pb-8 px-2 font-mono w-[58mm] text-xs mx-auto leading-tight">
         <div className="text-center">
-          <h2 className="font-bold text-xl uppercase mb-1">
+          <h2 className="font-bold text-lg uppercase mb-1">
             {perfilLoja?.nome_loja || "VULPE MART"}
           </h2>
-          <h3 className="font-bold text-sm uppercase mb-1">
+          <h3 className="font-bold text-[10px] uppercase mb-1">
             MERCEARIA E CONVENIÊNCIA
           </h3>
-          <p className="text-xs mb-4">
+          <p className="text-[10px] mb-3">
             {perfilLoja?.endereco || "Chimoio, Manica"}. 
             <br />
             Contacto: {perfilLoja?.telefone || "845773342"}
           </p>
 
-          <p className="text-xs text-left mb-4">
+          <p className="text-[10px] text-left mb-2">
             Data: {new Date().toLocaleString("pt-MZ")}
             <br />
             Op: Vendedor
           </p>
 
-          <div className="border-t border-black border-dashed my-2"></div>
+          <div className="border-t border-black border-dashed my-1"></div>
 
-          <table className="w-full text-left text-xs mb-2">
+          <table className="w-full text-left text-[10px] mb-1">
             <thead>
               <tr>
-                <th className="pb-1 w-8">Qtd</th>
+                <th className="pb-1 w-6">Qtd</th>
                 <th className="pb-1">Artigo</th>
                 <th className="pb-1 text-right">Total</th>
               </tr>
@@ -904,15 +908,15 @@ const exportarHistoricoVendedorPDF = () => {
             </tbody>
           </table>
 
-          <div className="border-t border-black border-dashed my-2"></div>
+          <div className="border-t border-black border-dashed my-1"></div>
 
-          <div className="flex justify-between font-bold text-base mb-4 mt-2">
+          <div className="flex justify-between font-bold text-sm mb-3 mt-1">
             <span>TOTAL MT:</span>
             <span>{totalVenda.toFixed(2)}</span>
           </div>
 
-          <p className="text-[10px] text-center mt-8 text-gray-800">Obrigado pela preferência!</p>
-          <p className="text-[8px] text-center mt-1 text-gray-500 uppercase tracking-widest">
+          <p className="text-[9px] text-center mt-4 text-black font-bold">Obrigado pela preferência!</p>
+          <p className="text-[7px] text-center mt-1 text-gray-800 uppercase tracking-widest">
             Software by Vulpe Instinct
           </p>
         </div>
