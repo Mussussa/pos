@@ -230,26 +230,25 @@ export function BackupGlobal() {
         });
       }
 
-      // 2. SINCRONIZAR VENDAS
-// 2. SINCRONIZAR VENDAS
+   // 2. SINCRONIZAR VENDAS (Blindado contra nomes diferentes de campos)
       const vendasPendentes = await db.vendas.filter(v => !v.sincronizado).toArray();
-      console.log(`📤 [Sincronização] Vendas pendentes para enviar (${vendasPendentes.length}):`, vendasPendentes);
+      console.log(`📤 [Sincronização] Vendas pendentes brutas do Dexie:`, vendasPendentes);
 
       if (vendasPendentes.length > 0) {
         const payloadVendas = vendasPendentes.map(v => {
-          // Garante conversão e validação numérica para evitar nulos na coluna 'total'
-          const valorTotal = Number(v.total ?? v.valorTotal ?? v.precoTotal ?? 0);
+          // Varre todas as hipóteses possíveis de nomes de campos usados no teu POS
+          const valorCalculado = Number(v.total ?? v.valor ?? v.precoTotal ?? v.subtotal ?? 0);
           
           return {
             loja_id: lojaId,
             data_venda: v.data ? new Date(v.data).toISOString() : new Date().toISOString(),
             vendedor_id: String(v.vendedorId || v.vendedor || 'admin'),
-            total: isNaN(valorTotal) ? 0 : valorTotal,
-            itens: v.itens || v.produtos || []
+            total: isNaN(valorCalculado) ? 0 : valorCalculado,
+            itens: v.itens || v.produtos || v.cart || []
           };
         });
 
-        console.log('📦 [Payload Vendas Limpo]:', payloadVendas);
+        console.log('📦 [Payload Vendas Pronto a Enviar]:', payloadVendas);
 
         const { data: resVendas, error: erroVendas } = await supabase
           .from('vendas')
