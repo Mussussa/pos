@@ -5,39 +5,87 @@ import { CloudLightning, ShieldCheck, DownloadCloud, LogIn, Key, AlertTriangle }
 import { useAuth } from '../../AuthContext';
 
 export function BackupGlobal() {
-  // 1. TODOS OS ESTADOS E HOOKS NO TOPO (Regra de Ouro do React)
   const [status, setStatus] = useState('');
   const [sessao, setSessao] = useState(null);
+  const [lojaAtual, setLojaAtual] = useState(null); // Guarda { id, nome } da loja
   const [isLogin, setIsLogin] = useState(false);
   const { user: currentUser } = useAuth();
+  
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [nomeLoja, setNomeLoja] = useState('');
   const [chave, setChave] = useState('');
 
-  // Hook 1: Verifica a sessão do Supabase
+  // 1. Verifica a sessão do Supabase e carrega os dados da loja
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSessao(session);
+      if (session) obterOuRecuperarLoja(session.user.id);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSessao(session);
+      if (session) {
+        obterOuRecuperarLoja(session.user.id);
+      } else {
+        setLojaAtual(null);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. FUNÇÕES DO SISTEMA
+  // Função que garante que sabemos sempre o ID da loja (Local ou Nuvem)
+  const obterOuRecuperarLoja = async (userId) => {
+    try {
+      // 1º Tenta ler do Dexie local (instantâneo e funciona offline)
+      const configLocal = await db.sistema.get('config_loja');
+      if (configLocal?.loja_id) {
+        setLojaAtual({ id: configLocal.loja_id, nome: configLocal.nome_loja });
+        return configLocal.loja_id;
+      }
+
+      // 2º Se não estiver no Dexie (ex: computador novo/dados apagados), busca no Supabase
+      if (navigator.onLine && userId) {
+        const { data: lojaNuvem, error } = await supabase
+          .from('lojas')
+          .select('id, nome')
+          .eq('owner_id', userId)
+          .single();
+
+        if (!error && lojaNuvem) {
+          // Guarda no Dexie para nunca mais precisar de perguntar
+          await db.sistema.put({
+            id: 'config_loja',
+            loja_id: lojaNuvem.id,
+            nome_loja: lojaNuvem.nome
+          });
+          setLojaAtual(lojaNuvem);
+          return lojaNuvem.id;
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao identificar a loja:', err);
+    }
+    return null;
+  };
+
+  // 2. Autenticação e Registo Inicial
   const gerirAutenticacao = async (e) => {
     e.preventDefault();
     setStatus('A processar...');
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
         if (error) throw error;
-        setStatus('✅ Login efetuado com sucesso!');
+        
+        const lojaId = await obterOuRecuperarLoja(data.user.id);
+        if (!lojaId) {
+          setStatus('⚠️ Conta autenticada, mas nenhuma loja encontrada para este utilizador.');
+          return;
+        }
+        setStatus('✅ Login efetuado e loja identificada!');
       } else {
         const { data: authData, error: authError } = await supabase.auth.signUp({ 
           email, 
@@ -45,51 +93,68 @@ export function BackupGlobal() {
         });
         if (authError) throw authError;
 
-        const { error: rpcError } = await supabase.rpc('registar_loja_com_chave', {
+        // O RPC no PostgreSQL devolve { sucesso: true, loja_id: uuid }
+        const { data: rpcData, error: rpcError } = await supabase.rpc('registar_loja_com_chave', {
           p_nome_loja: nomeLoja,
           p_chave: chave
         });
 
         if (rpcError) {
-          setStatus(`🚨 Erro: ${rpcError.message}`);
+          setStatus(`🚨 Erro na licença: ${rpcError.message}`);
           return;
         }
 
-        setStatus('✅ Loja ativada e conectada à Nuvem!');
+        // Guarda imediatamente o ID da loja recém-criada no Dexie
+        await db.sistema.put({
+          id: 'config_loja',
+          loja_id: rpcData.loja_id,
+          nome_loja: nomeLoja
+        });
+        setLojaAtual({ id: rpcData.loja_id, nome: nomeLoja });
+
+        setStatus('✅ Loja ativada, registada localmente e conectada à Nuvem!');
       }
     } catch (err) {
       setStatus(`🚨 Erro: ${err.message}`);
     }
   };
 
+  // 3. Sincronização (Dexie -> Supabase)
   const forcarSincronizacao = async () => {
     if (!navigator.onLine) {
       setStatus('⚠️ Estás offline. Conecta-te à internet primeiro.');
       return;
     }
-    
+
     setStatus('A sincronizar com a nuvem...');
-    
+
     try {
-      // 1. SINCRONIZAR PRODUTOS
-// 1. SINCRONIZAR PRODUTOS
+      const lojaId = lojaAtual?.id || (await obterOuRecuperarLoja(sessao?.user?.id));
+      if (!lojaId) {
+        setStatus('🚨 Erro: Não foi possível identificar o ID desta loja.');
+        return;
+      }
+
+      // 1. SINCRONIZAR PRODUTOS (Usando upsert para atualizar stock se o código já existir)
       const produtosPendentes = await db.produtos.filter(p => !p.sincronizado).toArray();
-      
+
       if (produtosPendentes.length > 0) {
-        // Ajustado para coincidir exatamente com as colunas do Supabase
         const payloadProdutos = produtosPendentes.map(p => ({
-          loja_id: loja.id,
+          loja_id: lojaId,
           codigo: p.codigo,
           nome: p.nome,
           categoria: p.categoria,
           subcategoria: p.subcategoria,
-          preco_venda: p.precoVenda,     // <-- Alterado de precoVenda
-          preco_custo: p.precoCusto,     // <-- Alterado de precoCusto
+          preco_venda: p.precoVenda,
+          preco_custo: p.precoCusto,
           stock: p.stock,
-          unidade_medida: p.unidadeMedida // <-- Alterado de unidadeMedida
+          unidade_medida: p.unidadeMedida
         }));
 
-        const { error: erroProdutos } = await supabase.from('produtos').insert(payloadProdutos);
+        const { error: erroProdutos } = await supabase
+          .from('produtos')
+          .upsert(payloadProdutos, { onConflict: 'loja_id, codigo' });
+
         if (erroProdutos) throw erroProdutos;
 
         await db.transaction('rw', db.produtos, async () => {
@@ -99,16 +164,16 @@ export function BackupGlobal() {
         });
       }
 
-      // 2. SINCRONIZAR VENDAS
+      // 2. SINCRONIZAR VENDAS (Incluindo o array de itens em jsonb)
       const vendasPendentes = await db.vendas.filter(v => !v.sincronizado).toArray();
-      
+
       if (vendasPendentes.length > 0) {
-        // Ajustado para coincidir exatamente com a tabela vendas
         const payloadVendas = vendasPendentes.map(v => ({
-          loja_id: loja.id,
-          data_venda: v.data,          // <-- Alterado de data
-          vendedor_id: v.vendedorId,   // <-- Alterado de vendedorId
-          total: v.total
+          loja_id: lojaId,
+          data_venda: v.data,
+          vendedor_id: String(v.vendedorId),
+          total: v.total,
+          itens: v.itens || [] // Fundamental para guardar o detalhe da venda
         }));
 
         const { error: erroVendas } = await supabase.from('vendas').insert(payloadVendas);
@@ -130,30 +195,87 @@ export function BackupGlobal() {
     }
   };
 
+  // 4. Recuperação de Emergência (Supabase -> Dexie)
   const restaurarDaNuvem = async () => {
+    if (!navigator.onLine) {
+      setStatus('⚠️ Precisas de internet para descarregar os dados da nuvem.');
+      return;
+    }
+
+    const confirmar = window.confirm('Isto vai substituir os produtos e vendas locais pelos dados da nuvem. Continuar?');
+    if (!confirmar) return;
+
     setStatus('A descarregar dados da loja...');
-    setTimeout(() => setStatus('✅ Base de dados reconstruída com sucesso!'), 1500);
+
+    try {
+      const lojaId = lojaAtual?.id || (await obterOuRecuperarLoja(sessao?.user?.id));
+      if (!lojaId) throw new Error('Loja não identificada para esta conta.');
+
+      // 1. Puxar produtos do Supabase
+      const { data: prodNuvem, error: errProd } = await supabase
+        .from('produtos')
+        .select('*')
+        .eq('loja_id', lojaId);
+      if (errProd) throw errProd;
+
+      // 2. Puxar histórico de vendas do Supabase
+      const { data: vendasNuvem, error: errVendas } = await supabase
+        .from('vendas')
+        .select('*')
+        .eq('loja_id', lojaId);
+      if (errVendas) throw errVendas;
+
+      // 3. Reconstruir tabelas locais no Dexie
+      await db.transaction('rw', db.produtos, db.vendas, async () => {
+        await db.produtos.clear();
+        await db.vendas.clear();
+
+        if (prodNuvem && prodNuvem.length > 0) {
+          const produtosFormatados = prodNuvem.map(p => ({
+            codigo: p.codigo,
+            nome: p.nome,
+            categoria: p.categoria,
+            subcategoria: p.subcategoria,
+            precoVenda: Number(p.preco_venda),
+            precoCusto: Number(p.preco_custo),
+            stock: Number(p.stock),
+            unidadeMedida: p.unidade_medida,
+            sincronizado: 1 // Já vieram da nuvem, não precisam de subir de novo
+          }));
+          await db.produtos.bulkAdd(produtosFormatados);
+        }
+
+        if (vendasNuvem && vendasNuvem.length > 0) {
+          const vendasFormatadas = vendasNuvem.map(v => ({
+            data: v.data_venda,
+            vendedorId: v.vendedor_id,
+            total: Number(v.total),
+            itens: v.itens || [],
+            sincronizado: 1
+          }));
+          await db.vendas.bulkAdd(vendasFormatadas);
+        }
+      });
+
+      setStatus(`✅ Base reconstruída! (${prodNuvem.length} produtos e ${vendasNuvem.length} vendas recuperadas)`);
+    } catch (err) {
+      setStatus(`🚨 Erro ao restaurar: ${err.message}`);
+    }
   };
 
-  // Hook 2: Dispara automaticamente quando a internet volta (Colocado após a função que utiliza)
+  // Dispara automaticamente quando a internet volta
   useEffect(() => {
     const ativarSincronizacaoAutomatica = () => {
-      if (sessao) {
+      if (sessao && lojaAtual?.id) {
         forcarSincronizacao();
       }
     };
 
     window.addEventListener('online', ativarSincronizacaoAutomatica);
-    
-    if (navigator.onLine && sessao) {
-      ativarSincronizacaoAutomatica();
-    }
-
     return () => window.removeEventListener('online', ativarSincronizacaoAutomatica);
-  }, [sessao]);
+  }, [sessao, lojaAtual]);
 
-
-  // 3. BLOQUEIOS DE SEGURANÇA E RENDERIZAÇÃO (Sempre no final)
+  // Bloqueio para vendedores
   if (currentUser?.role !== 'admin') {
     return (
       <div className="p-6 bg-zinc-50 min-h-full flex flex-col items-center justify-center font-sans">
@@ -166,6 +288,7 @@ export function BackupGlobal() {
     );
   }
 
+  // Ecrã de Login / Ativação no Supabase
   if (!sessao) {
     return (
       <div className="p-6 bg-zinc-50 min-h-full flex flex-col items-center justify-center font-sans">
@@ -219,14 +342,21 @@ export function BackupGlobal() {
     );
   }
 
+  // Painel Principal Sincronizado
   return (
     <div className="p-6 bg-zinc-50 min-h-full text-zinc-900 font-sans">
-      <h2 className="text-2xl font-bold mb-6 text-orange-500 uppercase tracking-wider flex items-center gap-2">
-        <CloudLightning size={28} /> Sincronização Premium
-      </h2>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-orange-500 uppercase tracking-wider flex items-center gap-2">
+          <CloudLightning size={28} /> Sincronização Premium
+        </h2>
+        {lojaAtual && (
+          <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-xs font-bold uppercase">
+            Loja: {lojaAtual.nome}
+          </span>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        
         <div className="bg-white border border-zinc-200 p-6 rounded-lg shadow-sm">
           <h3 className="text-lg font-bold text-zinc-800 flex items-center gap-2 mb-4">
             <CloudLightning className={navigator.onLine ? "text-blue-500" : "text-zinc-400"} /> 
