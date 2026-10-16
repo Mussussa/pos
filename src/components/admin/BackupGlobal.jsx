@@ -281,7 +281,7 @@ export function BackupGlobal() {
             {isLogin ? 'Primeiro acesso? Ativa aqui.' : 'Já ativaste? Faz Login.'}
           </button>
         </div>
-        {status && <div className="mt-4 text-sm font-bold">{status}</div>}
+        {status && <div className="mt-4 text-sm font-bold text-black" >{status}</div>}
       </div>
     );
   }
