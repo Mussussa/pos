@@ -45,6 +45,7 @@ export function GestaoUsuarios() {
       setTimeout(() => setMsgPerfil(''), 3000);
     } catch (err) {
       setMsgPerfil('🚨 Erro ao guardar configurações.');
+      console.log(`Exception while doing something: ${err}`);
     }
   };
 
@@ -74,6 +75,7 @@ export function GestaoUsuarios() {
       setPassword('');
     } catch (err) {
       setErroUsers('Erro ao criar o utilizador na base de dados.');
+      console.log(`Exception while doing something: ${err}`);
     }
   };
 
