@@ -25,6 +25,7 @@ const mapaCategorias = {
 
 export function GestaoProdutos() {
   const produtos = useLiveQuery(() => db.produtos.toArray());
+  const lotes = useLiveQuery(() => db.lotes.toArray());
   const [erro, setErro] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("todas");
 
@@ -37,6 +38,7 @@ export function GestaoProdutos() {
   const [precoVenda, setPrecoVenda] = useState("");
   const [stock, setStock] = useState("");
   const [unidadeMedida, setUnidadeMedida] = useState("Un."); 
+  const [validade, setValidade] = useState("");
 
   const iniciarEdicao = (produto) => {
     setErro("");
@@ -49,6 +51,7 @@ export function GestaoProdutos() {
     setPrecoVenda(produto.precoVenda);
     setStock(produto.stock);
     setUnidadeMedida(produto.unidadeMedida || "Un.");
+    setValidade("");
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -62,6 +65,7 @@ export function GestaoProdutos() {
     setPrecoVenda("");
     setStock("");
     setUnidadeMedida("Un.");
+    setValidade("");
     setErro("");
   };
 
@@ -84,8 +88,9 @@ export function GestaoProdutos() {
 
     if (numLimpo.length === 0) return setErro("O código numérico é obrigatório.");
     if (!pNome) return setErro("O nome é obrigatório.");
-    if (pVenda <= 0 || pCusto < 0) return setErro("Preços inválidos.");
-    if (pStock < 0) return setErro("O stock não pode ser negativo.");
+    if (!Number.isFinite(pVenda) || !Number.isFinite(pCusto) || pVenda <= 0 || pCusto < 0) return setErro("Preços inválidos.");
+    if (pVenda < pCusto) return setErro("O preço de venda não pode ser inferior ao preço de custo.");
+    if (!Number.isFinite(pStock) || pStock < 0) return setErro("O stock não pode ser negativo.");
 
     const duplicado = produtos.find(p => 
       (p.nome.toLowerCase() === pNome.toLowerCase() || p.codigo === pCodigo) && p.id !== produtoEmEdicao
@@ -109,13 +114,64 @@ export function GestaoProdutos() {
       };
 
       let idLocalAtual = produtoEmEdicao;
+      await db.transaction("rw", db.produtos, db.lotes, async () => {
+        if (produtoEmEdicao) {
+          const produtoAnterior = await db.produtos.get(produtoEmEdicao);
+          if (!produtoAnterior) throw new Error("Produto não encontrado.");
+          await db.produtos.update(produtoEmEdicao, dadosProduto);
 
-      // 1. Grava no Dexie Local
-      if (produtoEmEdicao) {
-        await db.produtos.update(produtoEmEdicao, dadosProduto);
-      } else {
-        idLocalAtual = await db.produtos.add(dadosProduto);
-      }
+          const lotesProduto = await db.lotes.where("produtoId").equals(produtoEmEdicao).toArray();
+          const stockAnterior = Number(produtoAnterior.stock) || 0;
+          const diferencaStock = pStock - stockAnterior;
+
+          if (diferencaStock > 0) {
+            await db.lotes.add({
+              id: crypto.randomUUID(),
+              produtoId: produtoEmEdicao,
+              validade: validade || null,
+              quantidade: diferencaStock,
+              sincronizado: 0
+            });
+          } else if (diferencaStock < 0) {
+            let quantidadeARemover = Math.abs(diferencaStock);
+            const stockSemLote = Math.max(
+              stockAnterior - lotesProduto.reduce((total, lote) => total + Number(lote.quantidade || 0), 0),
+              0
+            );
+            quantidadeARemover -= Math.min(stockSemLote, quantidadeARemover);
+
+            const lotesParaReduzir = [...lotesProduto].sort((a, b) => {
+              if (!a.validade && !b.validade) return 0;
+              if (!a.validade) return -1;
+              if (!b.validade) return 1;
+              return b.validade.localeCompare(a.validade);
+            });
+
+            for (const lote of lotesParaReduzir) {
+              if (quantidadeARemover <= 0) break;
+              const reducao = Math.min(Number(lote.quantidade) || 0, quantidadeARemover);
+              if (reducao > 0) {
+                await db.lotes.update(lote.id, {
+                  quantidade: Number(lote.quantidade) - reducao,
+                  sincronizado: 0
+                });
+                quantidadeARemover -= reducao;
+              }
+            }
+          }
+        } else {
+          idLocalAtual = await db.produtos.add(dadosProduto);
+          if (pStock > 0) {
+            await db.lotes.add({
+              id: crypto.randomUUID(),
+              produtoId: idLocalAtual,
+              validade: validade || null,
+              quantidade: pStock,
+              sincronizado: 0
+            });
+          }
+        }
+      });
       cancelarEdicao();
 
       // 2. SINCRONIZAÇÃO INSTANTÂNEA: Se houver internet, envia de imediato para a nuvem
@@ -143,9 +199,10 @@ export function GestaoProdutos() {
             await db.produtos.update(idLocalAtual, { sincronizado: 1 });
           }
         }
+        window.dispatchEvent(new Event('online'));
       }
     } catch (err) {
-      setErro("Erro ao guardar o produto. Verifica se há duplicação de registos.");
+      setErro(`Erro ao guardar o produto: ${err.message || "verifica os dados e tenta novamente."}`);
     }
   };
 
@@ -159,7 +216,10 @@ export function GestaoProdutos() {
       const produtoParaApagar = await db.produtos.get(id);
 
       // 2. Apaga localmente no Dexie
-      await db.produtos.delete(id);
+      await db.transaction("rw", db.produtos, db.lotes, async () => {
+        await db.lotes.where("produtoId").equals(id).delete();
+        await db.produtos.delete(id);
+      });
       if (produtoEmEdicao === id) cancelarEdicao();
 
       // 3. APAGA NO SUPABASE (Mata o Zombie)
@@ -252,19 +312,25 @@ export function GestaoProdutos() {
         <input
           type="number"
           step="0.01"
+          min="0"
           placeholder="Preço de Custo (MT)"
           required
           value={precoCusto}
-          onChange={(e) => setPrecoCusto(e.target.value)}
+          onChange={(e) => {
+            if (e.target.value === "" || Number(e.target.value) >= 0) setPrecoCusto(e.target.value);
+          }}
           className="bg-white border border-zinc-300 text-zinc-900 placeholder-zinc-400 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
         />
         <input
           type="number"
           step="0.01"
+          min={precoCusto || "0"}
           placeholder="Preço de Venda (MT)"
           required
           value={precoVenda}
-          onChange={(e) => setPrecoVenda(e.target.value)}
+          onChange={(e) => {
+            if (e.target.value === "" || Number(e.target.value) >= 0) setPrecoVenda(e.target.value);
+          }}
           className="bg-white border border-zinc-300 text-zinc-900 placeholder-zinc-400 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
         />
         
@@ -272,10 +338,13 @@ export function GestaoProdutos() {
           <input
             type="number"
             step="0.01"
+            min="0"
             placeholder="Quantidade em Stock"
             required
             value={stock}
-            onChange={(e) => setStock(e.target.value)}
+            onChange={(e) => {
+              if (e.target.value === "" || Number(e.target.value) >= 0) setStock(e.target.value);
+            }}
             className="flex-1 bg-white border border-zinc-300 text-zinc-900 placeholder-zinc-400 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
           />
           <select
@@ -290,6 +359,19 @@ export function GestaoProdutos() {
             <option value="Caixa">Caixa</option>
           </select>
         </div>
+
+        <label className="md:col-span-2 flex flex-col gap-2 text-sm font-medium text-zinc-700">
+          Data de validade do stock adicionado
+          <input
+            type="date"
+            value={validade}
+            onChange={(e) => setValidade(e.target.value)}
+            className="bg-white border border-zinc-300 text-zinc-900 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+          />
+          <span className="text-xs font-normal text-zinc-500">
+            Opcional para produtos sem validade. Ao editar, a data aplica-se apenas ao aumento de stock.
+          </span>
+        </label>
 
         <div className="md:col-span-2 flex gap-4 mt-2">
           <button
@@ -353,6 +435,12 @@ export function GestaoProdutos() {
                   </span>
                   <span className="text-xs text-zinc-500 mt-1">
                     {p.categoria} &gt; {p.subcategoria}
+                  </span>
+                  <span className="text-xs text-zinc-500 mt-1">
+                    Lotes: {(lotes || [])
+                      .filter((lote) => lote.produtoId === p.id && Number(lote.quantidade) > 0)
+                        .map((lote) => `${Number(lote.quantidade)} ${p.unidadeMedida || "Un."} — ${lote.validade || "sem validade"}`)
+                      .join(" | ") || "stock anterior sem lotes registados"}
                   </span>
                 </div>
               </div>

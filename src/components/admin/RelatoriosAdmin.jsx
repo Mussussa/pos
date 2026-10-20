@@ -133,6 +133,14 @@ export function RelatoriosAdmin() {
   
   const vendasRaw = useLiveQuery(() => db.vendas.orderBy('data').reverse().toArray());
   const produtos = useLiveQuery(() => db.produtos.toArray());
+  const dadosLotes = useLiveQuery(async () => {
+    const registros = await db.lotes.toArray();
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    return { registros, hoje };
+  });
+  const lotes = dadosLotes?.registros;
+  const hojeValidade = dadosLotes?.hoje;
 
   // 1. Lógica de Filtragem de Datas
   const vendas = useMemo(() => {
@@ -198,6 +206,22 @@ export function RelatoriosAdmin() {
     vendasPorDia[dataCurta].lucro += Number(v.lucroTotal || 0);
   });
   const dadosEvolucao = Object.values(vendasPorDia);
+  const alertasValidade = useMemo(() => {
+    if (!hojeValidade) return [];
+    return (lotes || [])
+      .filter(lote => lote.validade && Number(lote.quantidade) > 0)
+      .map(lote => {
+        const dataValidade = new Date(`${lote.validade}T00:00:00`);
+        const diasRestantes = Math.ceil((dataValidade - hojeValidade) / 86400000);
+        return {
+          ...lote,
+          produto: (produtos || []).find(item => item.id === lote.produtoId),
+          diasRestantes
+        };
+      })
+      .filter(lote => lote.produto && lote.diasRestantes <= 30)
+      .sort((a, b) => a.diasRestantes - b.diasRestantes);
+  }, [lotes, produtos, hojeValidade]);
 
   // 5. Função de Exportação para PDF (CORRIGIDO)
   const exportarPDF = () => {
@@ -447,6 +471,45 @@ export function RelatoriosAdmin() {
       </div>
 
       <ModuloPrecoMinimo produtos={produtos} />
+
+      <div className="bg-white border border-zinc-200 rounded-lg shadow-sm mt-8 overflow-hidden">
+        <div className="p-4 border-b border-zinc-200 bg-zinc-50">
+          <h3 className="font-bold text-zinc-800">Validades: produtos vencidos ou a vencer em 30 dias</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-zinc-100 text-zinc-600 text-sm">
+              <tr>
+                <th className="p-3 font-semibold">Produto</th>
+                <th className="p-3 font-semibold">Quantidade</th>
+                <th className="p-3 font-semibold">Validade</th>
+                <th className="p-3 font-semibold">Estado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100 text-sm">
+              {alertasValidade.map(lote => (
+                <tr key={lote.id}>
+                  <td className="p-3 text-zinc-700">{lote.produto.nome}</td>
+                  <td className="p-3 text-zinc-700">{lote.quantidade} {lote.produto.unidadeMedida}</td>
+                  <td className="p-3 text-zinc-700">{lote.validade}</td>
+                  <td className={`p-3 font-bold ${lote.diasRestantes < 0 ? "text-red-600" : "text-orange-600"}`}>
+                    {lote.diasRestantes < 0
+                      ? `Vencido há ${Math.abs(lote.diasRestantes)} dia(s)`
+                      : lote.diasRestantes === 0
+                        ? "Vence hoje"
+                        : `Vence em ${lote.diasRestantes} dia(s)`}
+                  </td>
+                </tr>
+              ))}
+              {alertasValidade.length === 0 && (
+                <tr>
+                  <td colSpan="4" className="p-6 text-center text-zinc-500">Não há lotes vencidos ou próximos do vencimento.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
     </div>
   );

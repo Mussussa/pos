@@ -17,6 +17,12 @@ import {
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 
+const obterDataLocal = () => {
+  const data = new Date();
+  data.setMinutes(data.getMinutes() - data.getTimezoneOffset());
+  return data.toISOString().slice(0, 10);
+};
+
 const mapaCategorias = {
   alimentacao: {
     prefixo: "A",
@@ -64,9 +70,27 @@ const mapaCategorias = {
 };
 
 export function TerminalVendas() {
-  const produtos = useLiveQuery(() =>
-    db.produtos.where("stock").above(0).toArray(),
-  );
+  const produtosBase = useLiveQuery(() => db.produtos.toArray());
+  const dadosLotes = useLiveQuery(async () => {
+    const registros = await db.lotes.toArray();
+    return { registros, hoje: obterDataLocal() };
+  });
+  const lotes = dadosLotes?.registros;
+  const hoje = dadosLotes?.hoje;
+  const produtos = useMemo(() => {
+    if (!produtosBase || !lotes) return [];
+    return produtosBase.map((produto) => {
+      const lotesProduto = lotes.filter((lote) => lote.produtoId === produto.id);
+      const stockEmLotes = lotesProduto.reduce((total, lote) => total + (Number(lote.quantidade) || 0), 0);
+      const stockAntigo = Math.max(Number(produto.stock) - stockEmLotes, 0);
+      const stockNaoVencido = lotesProduto.reduce((total, lote) => (
+        !lote.validade || lote.validade >= hoje
+          ? total + (Number(lote.quantidade) || 0)
+          : total
+      ), 0);
+      return { ...produto, stock: Math.min(Number(produto.stock), stockAntigo + stockNaoVencido) };
+    }).filter((produto) => produto.stock > 0);
+  }, [produtosBase, lotes, hoje]);
   const vendas = useLiveQuery(() => db.vendas.toArray());
   const perfilLoja = useLiveQuery(() => db.sistema.get('perfil_loja'));
 
@@ -157,6 +181,10 @@ export function TerminalVendas() {
   }, [vendasOrdenadas, paginaHistorico]);
 
   const adicionarAoCarrinho = (produto) => {
+    if (Number(produto.precoVenda) < Number(produto.precoCusto)) {
+      alert(`O preço de venda de ${produto.nome} é inferior ao preço de custo.`);
+      return;
+    }
     setCarrinho((prev) => {
       const existe = prev.find((item) => item.id === produto.id);
       if (existe) {
@@ -190,6 +218,7 @@ export function TerminalVendas() {
   };
 
   const definirQuantidadeManual = (id, valorTexto) => {
+    if (valorTexto.startsWith("-")) return;
     setCarrinho((prev) =>
       prev.map((item) => {
         if (item.id === id) {
@@ -202,6 +231,7 @@ export function TerminalVendas() {
   };
 
   const definirPorValorManual = (id, valorTexto) => {
+    if (valorTexto.startsWith("-")) return;
     setCarrinho((prev) =>
       prev.map((item) => {
         if (item.id === id) {
@@ -271,6 +301,13 @@ export function TerminalVendas() {
 
   const finalizarVenda = async () => {
     if (carrinho.length === 0) return;
+    const produtoComPrecoInvalido = carrinho.find(
+      (item) => Number(item.precoVenda) < Number(item.precoCusto)
+    );
+    if (produtoComPrecoInvalido) {
+      alert(`O preço de venda de ${produtoComPrecoInvalido.nome} não pode ser inferior ao preço de custo.`);
+      return;
+    }
     const lucroTotal = carrinho.reduce((acc, item) => {
       const qtd = parseFloat(item.quantidade) || 0;
       const precoV = Number(item.precoVenda || 0);
@@ -298,16 +335,57 @@ export function TerminalVendas() {
     };
 
     try {
-      await db.transaction("rw", db.produtos, db.vendas, async () => {
+      await db.transaction("rw", db.produtos, db.vendas, db.lotes, async () => {
         await db.vendas.add(novaVenda);
         for (const item of novaVenda.itens) {
           const prodDB = await db.produtos.get(item.produtoId);
-          if (prodDB) {
-            await db.produtos.update(item.produtoId, {
-              stock: prodDB.stock - item.quantidade,
-              sincronizado: 0 
-            });
+          if (!prodDB || Number(prodDB.stock) < item.quantidade) {
+            throw new Error(`Stock insuficiente para ${item.nome}. Atualiza o carrinho e tenta novamente.`);
           }
+
+          const dataHoje = obterDataLocal();
+          const lotesProduto = await db.lotes.where("produtoId").equals(item.produtoId).toArray();
+          const quantidadeEmLotes = lotesProduto.reduce(
+            (total, lote) => total + (Number(lote.quantidade) || 0),
+            0
+          );
+          const stockAntigo = Math.max(Number(prodDB.stock) - quantidadeEmLotes, 0);
+          const quantidadeVendavel = stockAntigo + lotesProduto.reduce((total, lote) => (
+            !lote.validade || lote.validade >= dataHoje
+              ? total + (Number(lote.quantidade) || 0)
+              : total
+          ), 0);
+          if (quantidadeVendavel < item.quantidade) {
+            throw new Error(`Há stock vencido indisponível para ${item.nome}.`);
+          }
+
+          const lotesValidos = lotesProduto
+            .filter((lote) => Number(lote.quantidade) > 0 && (!lote.validade || lote.validade >= dataHoje))
+            .sort((a, b) => {
+              if (!a.validade && !b.validade) return 0;
+              if (!a.validade) return 1;
+              if (!b.validade) return -1;
+              return a.validade.localeCompare(b.validade);
+            });
+          let quantidadePorAlocar = Math.min(
+            item.quantidade,
+            lotesValidos.reduce((total, lote) => total + Number(lote.quantidade), 0)
+          );
+
+          for (const lote of lotesValidos) {
+            if (quantidadePorAlocar <= 0) break;
+            const quantidadeRemovida = Math.min(Number(lote.quantidade), quantidadePorAlocar);
+            await db.lotes.update(lote.id, {
+              quantidade: Number(lote.quantidade) - quantidadeRemovida,
+              sincronizado: 0
+            });
+            quantidadePorAlocar -= quantidadeRemovida;
+          }
+
+          await db.produtos.update(item.produtoId, {
+            stock: Number(prodDB.stock) - item.quantidade,
+            sincronizado: 0
+          });
         }
       });
       
@@ -321,7 +399,7 @@ export function TerminalVendas() {
       }
       
     } catch (error) {
-      alert("Erro ao processar a venda.");
+      alert(error.message || "Erro ao processar a venda.");
       console.error(error);
     }
   };
@@ -627,7 +705,7 @@ export function TerminalVendas() {
               </div>
               
               <div className="flex flex-wrap justify-between items-end mt-auto pt-1.5 w-full gap-1">
-                <span className="text-[9px] md:text-[10px] font-bold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded whitespace-nowrap">Stk: {p.stock}</span>
+                <span className="text-[9px] md:text-[10px] font-bold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded whitespace-nowrap">Stk: {p.stock} {p.unidadeMedida}</span>
                 <span className="font-black text-orange-600 text-sm md:text-base leading-none whitespace-nowrap">{Number(p.precoVenda || 0).toFixed(2)} <span className="text-[9px] md:text-[10px] text-orange-400">MT</span></span>
               </div>
             </button>
@@ -740,6 +818,7 @@ export function TerminalVendas() {
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
+                      min="0"
                       step="0.01"
                       placeholder="0.00"
                       value={
