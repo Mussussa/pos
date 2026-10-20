@@ -935,8 +935,7 @@ export function TerminalVendas() {
             <thead>
               <tr>
                 <th className="pb-1 w-6">Qtd</th>
-                <th className="pb-1">Artigo</th>
-                <th className="pb-1 text-right">Total</th>
+                <th className="pb-1">Artigo - Total</th>
               </tr>
             </thead>
             <tbody>
@@ -947,9 +946,8 @@ export function TerminalVendas() {
                     <td className="align-top font-bold">
                       {isNaN(itemQtd) ? 1 : itemQtd}x
                     </td>
-                    <td className="align-top pr-1">{item.nome}</td>
-                    <td className="align-top text-right">
-                      {(
+                    <td className="align-top pr-1">
+                      {item.nome} - {(
                         Number(item.precoVenda || 0) * (isNaN(itemQtd) ? 1 : itemQtd)
                       ).toFixed(2)}
                     </td>

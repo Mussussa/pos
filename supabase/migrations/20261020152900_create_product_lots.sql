@@ -40,6 +40,19 @@ create policy "Dono pode gerir lotes da sua loja"
 
 grant select, insert, update, delete on public.lotes_produtos to authenticated;
 
-alter table public.produtos
-  add constraint produtos_preco_venda_ge_custo
-  check (preco_venda >= preco_custo) not valid;
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'produtos_preco_venda_ge_custo'
+      and conrelid = 'public.produtos'::regclass
+  ) then
+    alter table public.produtos
+      add constraint produtos_preco_venda_ge_custo
+      check (preco_venda >= preco_custo) not valid;
+  end if;
+end;
+$$;
+
+notify pgrst, 'reload schema';

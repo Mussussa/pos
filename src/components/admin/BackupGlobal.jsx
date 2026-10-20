@@ -22,7 +22,7 @@ export function BackupGlobal() {
       setSessao(session);
       if (session) {
         obterOuRecuperarLoja(session.user.id).then(lojaId => {
-          if (lojaId) executarSincronizacaoSilenciosa(lojaId); 
+          if (lojaId) sincronizarEmBackground(lojaId);
         });
       }
     });
@@ -31,7 +31,7 @@ export function BackupGlobal() {
       setSessao(session);
       if (session) {
         obterOuRecuperarLoja(session.user.id).then(lojaId => {
-          if (lojaId) executarSincronizacaoSilenciosa(lojaId); 
+          if (lojaId) sincronizarEmBackground(lojaId);
         });
       } else {
         setLojaAtual(null);
@@ -47,7 +47,7 @@ export function BackupGlobal() {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.id) {
         const lojaId = await obterOuRecuperarLoja(session.user.id);
-        if (lojaId) executarSincronizacaoSilenciosa(lojaId);
+        if (lojaId) await sincronizarEmBackground(lojaId);
       }
     };
 
@@ -222,6 +222,15 @@ export function BackupGlobal() {
       }
     } catch (err) {
       throw err; 
+    }
+  };
+
+  const sincronizarEmBackground = async (lojaId) => {
+    try {
+      await executarSincronizacaoSilenciosa(lojaId);
+    } catch (err) {
+      console.error('🚨 Erro na sincronização em segundo plano:', err);
+      setStatus(`🚨 Erro na sincronização: ${err.message}`);
     }
   };
 
