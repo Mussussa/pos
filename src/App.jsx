@@ -20,7 +20,7 @@ function Sidebar() {
   
   // Lê o nome da loja gravado no Dexie
   const perfilLoja = useLiveQuery(() => db.sistema.get('perfil_loja'));
-  const nomeExibicao = perfilLoja?.nome_loja || "VULPE MART";
+  const nomeExibicao = perfilLoja?.nome_loja || "MISTO MART";
 
   const linkAtivo = (caminho) =>
     location.pathname === caminho
@@ -33,7 +33,7 @@ function Sidebar() {
       {/* Cabeçalho do Menu */}
       <div className="mb-6 py-6 border-b border-zinc-800 flex flex-col items-center">
         <img
-          src="/logo_vulpe_instinct.png"
+          src="/logo_misto.png"
           alt="Logótipo"
           className="w-10 group-hover:w-24 h-auto rounded-xl shadow-[0_0_20px_rgba(249,115,22,0.15)] border border-zinc-800 transition-all duration-300 object-cover"
         />

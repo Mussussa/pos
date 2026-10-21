@@ -23,7 +23,7 @@ export class ErrorBoundary extends React.Component {
       errorInfo: errorInfo
     });
     // Aqui poderias enviar o erro para um serviço de logs (Sentry, etc.)
-    console.error("ERRO APANHADO NO VULPE MART:", error, errorInfo);
+    console.error("ERRO APANHADO NO MISTO MART:", error, errorInfo);
   }
 
   render() {

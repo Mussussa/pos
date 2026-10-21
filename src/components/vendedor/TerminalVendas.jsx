@@ -425,7 +425,7 @@ export function TerminalVendas() {
 
     doc.setTextColor(0, 0, 0); 
 
-    centralizarTexto("VULPE MART", 12, 16, true);
+    centralizarTexto("MISTO MART", 12, 16, true);
     centralizarTexto("MERCEARIA E CONVENIÊNCIA", 16, 9, true);
     centralizarTexto("Chimoio, Manica. Contacto: 845773342.", 20, 8);
 
@@ -912,7 +912,7 @@ export function TerminalVendas() {
       <div className="hidden print:block absolute top-0 left-0 bg-white text-black pt-1 pb-4 px-1 font-mono w-[58mm] mx-auto leading-tight" style={{ fontSize: '11px' }}>
         <div className="text-center">
           <h2 className="font-bold text-base uppercase mb-1">
-            {perfilLoja?.nome_loja || "VULPE MART"}
+            {perfilLoja?.nome_loja || "MISTO MART"}
           </h2>
           <h3 className="font-bold text-[9px] uppercase mb-1">
             MERCEARIA E CONVENIÊNCIA
@@ -970,7 +970,7 @@ export function TerminalVendas() {
 
           <p className="text-[9px] text-center mt-4 text-black font-bold">Documento para controlo interno</p>
           <p className="text-[7px] text-center mt-1 text-gray-800 uppercase tracking-widest">
-            SOFTWARE BY VULPE INSTINCT
+            SOFTWARE BY MISTO INSTINCT
           </p>
         </div>
       </div>

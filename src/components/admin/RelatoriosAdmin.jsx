@@ -10,7 +10,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 // ==========================================
-// MÓDULO: SIMULADOR DE PREÇO MÍNIMO (TEMA CLARO VULPE)
+// MÓDULO: SIMULADOR DE PREÇO MÍNIMO (TEMA CLARO MISTO)
 // ==========================================
 function ModuloPrecoMinimo({ produtos }) {
   const [busca, setBusca] = useState("");
@@ -230,7 +230,7 @@ export function RelatoriosAdmin() {
     // Cabeçalho Principal
     doc.setFontSize(20);
     doc.setTextColor(249, 115, 22); // Orange
-    doc.text("VULPE MART", 14, 22);
+    doc.text("MISTO MART", 14, 22);
     
     doc.setFontSize(12);
     doc.setTextColor(50, 50, 50);
