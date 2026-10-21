@@ -30,8 +30,8 @@ export function Login() {
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-900 via-orange-500 to-orange-900"></div>
 
         <div className="text-center mb-8 mt-2">
-          <img src="/logo_vulpe_instinct.png" alt="Logótipo Vulpe Mart" className="w-24 h-24 mx-auto rounded-xl mb-4 shadow-[0_0_20px_rgba(249,115,22,0.15)] border border-zinc-800" />
-          <h1 className="text-2xl font-bold text-zinc-100 tracking-wider">VULPE <span className="text-orange-500">MART</span></h1>
+          <img src="/logo_misto.png" alt="Logótipo Vulpe Mart" className="w-24 h-24 mx-auto rounded-xl mb-4 shadow-[0_0_20px_rgba(249,115,22,0.15)] border border-zinc-800" />
+          <h1 className="text-2xl font-bold text-zinc-100 tracking-wider">MISTO <span className="text-orange-500">MART</span></h1>
           <p className="text-xs text-zinc-500 uppercase tracking-widest mt-1">
             {needsSetup ? 'Configuração Inicial' : 'Acesso Reservado'}
           </p>
