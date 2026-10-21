@@ -31,7 +31,7 @@ const mapaCategorias = {
       "Laticínios e Charcutaria",
       "Bolachas e biscoitos",
       "Carnes",
-      "Mariscos ",
+      "Mariscos",
       "Snacks e Doces",
       "outros",
     ],
@@ -56,6 +56,24 @@ const mapaCategorias = {
       "Papel e Descartáveis",
       "outros",
     ],
+  },
+  beleza_vestuario: { 
+    prefixo: 'V', 
+    subcategorias: [
+      'Mexas e Cabelos', 
+      'Chinelos e Calçado', 
+      'Acessórios de Moda', 
+      'outros'
+    ] 
+  },
+  veiculos_pecas: { 
+    prefixo: 'P', 
+    subcategorias: [
+      'Peças de Motas', 
+      'Óleos e Lubrificantes', 
+      'Acessórios Diversos', 
+      'outros'
+    ] 
   },
   diversos: {
     prefixo: "D",
@@ -104,11 +122,13 @@ export function TerminalVendas() {
   const [paginaHistorico, setPaginaHistorico] = useState(1);
   const itensPorPaginaHistorico = 15;
 
-  const categorias = [
+const categorias = [
     { id: "todas", label: "Todas" },
     { id: "alimentacao", label: "Alimentação" },
     { id: "bebidas", label: "Bebidas" },
     { id: "limpeza", label: "Limpeza" },
+    { id: "beleza_vestuario", label: "Beleza e Vestuário" },
+    { id: "veiculos_pecas", label: "Veículos e Peças" },
     { id: "diversos", label: "Diversos" },
   ];
 

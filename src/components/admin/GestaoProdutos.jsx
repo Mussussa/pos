@@ -17,9 +17,17 @@ const mapaCategorias = {
     prefixo: 'L', 
     subcategorias: ['Limpeza do Lar', 'Tratamento de Roupa', 'Higiene Pessoal', 'Papel e Descartáveis', 'outros'] 
   },
+  beleza_vestuario: { 
+    prefixo: 'V', 
+    subcategorias: ['Mexas e Cabelos', 'Chinelos e Calçado', 'Acessórios de Moda', 'outros'] 
+  },
+  veiculos_pecas: { 
+    prefixo: 'P', 
+    subcategorias: ['Peças de Motas', 'Óleos e Lubrificantes', 'Acessórios Diversos', 'outros'] 
+  },
   diversos: { 
     prefixo: 'D', 
-    subcategorias: ['Casa e Utilidades', 'Alimentação Animal', 'Papelaria', 'Pilhas e Eletrónica', 'Outros'] 
+    subcategorias: ['Casa e Utilidades', 'Alimentação Animal', 'Papelaria', 'Pilhas e Eletrónica', 'outros'] 
   }
 };
 
@@ -295,6 +303,8 @@ export function GestaoProdutos() {
           <option value="alimentacao">Alimentação</option>
           <option value="bebidas">Bebidas</option>
           <option value="limpeza">Limpeza</option>
+          <option value="beleza_vestuario">Beleza e Vestuário</option>
+          <option value="veiculos_pecas">Veículos e Peças</option>
           <option value="diversos">Diversos</option>
         </select>
 
@@ -415,6 +425,8 @@ export function GestaoProdutos() {
             <option value="alimentacao">Alimentação</option>
             <option value="bebidas">Bebidas</option>
             <option value="limpeza">Limpeza</option>
+            <option value="beleza_vestuario">Beleza e Vestuário</option>
+            <option value="veiculos_pecas">Veículos e Peças</option>
             <option value="diversos">Diversos</option>
           </select>
         </div>
