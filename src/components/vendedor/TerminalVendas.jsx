@@ -908,68 +908,72 @@ export function TerminalVendas() {
         `}
       </style>
 
-      {/* Recibo Térmico de Impressão */}
-      <div className="hidden print:block absolute top-0 left-0 bg-white text-black pt-1 pb-4 px-1 font-mono w-[58mm] mx-auto leading-tight" style={{ fontSize: '11px' }}>
-        <div className="text-center">
-          <h2 className="font-bold text-base uppercase mb-1">
-            {perfilLoja?.nome_loja || "VULPE MART"}
-          </h2>
-          <h3 className="font-bold text-[9px] uppercase mb-1">
-            MERCEARIA E CONVENIÊNCIA
-          </h3>
-          <p className="text-[9px] mb-3">
-            {perfilLoja?.endereco || "Chimoio, Manica"}. 
-            <br />
-            Contacto: {perfilLoja?.telefone || "845773342"}
-          </p>
+   {/* Recibo Térmico de Impressão */}
+      <div className="hidden print:block absolute top-0 left-0 bg-white text-black pt-1 pb-4 px-1 font-mono w-[58mm] mx-auto leading-tight" style={{ fontSize: '11px' }}>
+        <div className="text-center">
+          <h2 className="font-bold text-base uppercase mb-1">
+            {perfilLoja?.nome_loja || "VULPE MART"}
+          </h2>
+          <h3 className="font-bold text-[9px] uppercase mb-1">
+            MERCEARIA E CONVENIÊNCIA
+          </h3>
+          <p className="text-[9px] mb-3">
+            {perfilLoja?.endereco || "Chimoio, Manica"}. 
+            <br />
+            Contacto: {perfilLoja?.telefone || "845773342"}
+          </p>
 
-          <p className="text-[9px] text-left mb-2">
-            Data: {new Date().toLocaleString("pt-MZ")}
-            <br />
-            Op: Vendedor
-          </p>
+          <p className="text-[9px] text-left mb-2">
+            Data: {new Date().toLocaleString("pt-MZ")}
+            <br />
+            Op: Vendedor
+          </p>
 
-          <div className="border-t border-black border-dashed my-1"></div>
+          <div className="border-t border-black border-dashed my-1"></div>
 
-          <table className="w-full text-left text-[9px] mb-1">
-            <thead>
-              <tr>
-                <th className="pb-1 w-6">Qtd</th>
-                <th className="pb-1">Artigo - Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {carrinho.map((item, idx) => {
-                const itemQtd = parseFloat(item.quantidade);
-                return (
-                  <tr key={idx}>
-                    <td className="align-top font-bold">
-                      {isNaN(itemQtd) ? 1 : itemQtd}x
-                    </td>
-                    <td className="align-top pr-1">
-                      {item.nome} - {(
-                        Number(item.precoVenda || 0) * (isNaN(itemQtd) ? 1 : itemQtd)
-                      ).toFixed(2)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <table className="w-full text-left text-[9px] mb-1">
+            <thead>
+              <tr>
+                <th className="pb-1 w-6">Qtd</th>
+                <th className="pb-1">Artigo</th>
+                <th className="pb-1 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {carrinho.map((item, idx) => {
+                const itemQtd = parseFloat(item.quantidade);
+                return (
+                  <tr key={idx}>
+                    <td className="align-top font-bold">
+                      {isNaN(itemQtd) ? 1 : itemQtd}x
+                    </td>
+                    <td className="align-top pr-1">{item.nome}</td>
+                    <td className="align-top text-right">
+                      {(
+                        Number(item.precoVenda || 0) * (isNaN(itemQtd) ? 1 : itemQtd)
+                      ).toFixed(2)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
 
-          <div className="border-t border-black border-dashed my-1"></div>
+          <div className="border-t border-black border-dashed my-1"></div>
 
-          <div className="flex justify-between font-bold text-xs mb-3 mt-1">
-            <span>TOTAL MT:</span>
-            <span>{totalVenda.toFixed(2)}</span>
-          </div>
+          <div className="flex justify-between font-bold text-xs mb-3 mt-1">
+            <span>TOTAL MT:</span>
+            <span>{totalVenda.toFixed(2)}</span>
+          </div>
 
-          <p className="text-[9px] text-center mt-4 text-black font-bold">Obrigado pela preferência!</p>
-          <p className="text-[7px] text-center mt-1 text-gray-800 uppercase tracking-widest">
-            SOFTWARE BY VULPE INSTINCT
-          </p>
-        </div>
-      </div>
-    </div>
+          <p className="text-[9px] text-center mt-4 text-black font-bold">Obrigado pela preferência!</p>
+
+          <p className="text-[9px] text-center mt-4 text-black font-bold">Documento para controlo interno</p>
+          <p className="text-[7px] text-center mt-1 text-gray-800 uppercase tracking-widest">
+            SOFTWARE BY VULPE INSTINCT
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
