@@ -8,7 +8,7 @@ export const AuthContext = createContext();
 const setCookie = (name, value, hours) => {
   const date = new Date();
   date.setTime(date.getTime() + (hours * 60 * 60 * 1000));
-  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${date.toUTCString()}; path=/; SameSite=Strict`;
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${date.toUTCString()}; path=/; SameSite=Strict; Secure`;
 };
 
 const getCookie = (name) => {
@@ -18,7 +18,7 @@ const getCookie = (name) => {
 };
 
 const deleteCookie = (name) => {
-  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Strict`;
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Strict; Secure`;
 };
 
 export function AuthProvider({ children }) {

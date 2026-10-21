@@ -21,11 +21,12 @@ export function MotorSincronizacao() {
         // 3. Puxa tudo o que está pendente no Dexie
         const produtosPendentes = await db.produtos.filter(p => !p.sincronizado).toArray();
         const vendasPendentes = await db.vendas.filter(v => !v.sincronizado).toArray();
+        const lotesPendentes = await db.lotes.filter(lote => !lote.sincronizado).toArray();
 
         // Se não houver nada para enviar, morre aqui silenciosamente
-        if (produtosPendentes.length === 0 && vendasPendentes.length === 0) return;
+        if (produtosPendentes.length === 0 && vendasPendentes.length === 0 && lotesPendentes.length === 0) return;
 
-        console.log(`🚀 [Motor Invisível] Detetou internet! A enviar ${produtosPendentes.length} produtos e ${vendasPendentes.length} vendas...`);
+        console.log(`🚀 [Motor Invisível] Detetou internet! A enviar ${produtosPendentes.length} produtos, ${lotesPendentes.length} lotes e ${vendasPendentes.length} vendas...`);
 
         // --- SINCRONIZA PRODUTOS ---
         if (produtosPendentes.length > 0) {
@@ -42,11 +43,43 @@ export function MotorSincronizacao() {
           }));
 
           const { error: erroProd } = await supabase.from('produtos').upsert(payloadProdutos, { onConflict: 'loja_id, codigo' });
-          if (!erroProd) {
-            await db.transaction('rw', db.produtos, async () => {
-              for (const prod of produtosPendentes) await db.produtos.update(prod.id, { sincronizado: 1 });
-            });
-          }
+          if (erroProd) throw erroProd;
+          await db.transaction('rw', db.produtos, async () => {
+            for (const prod of produtosPendentes) await db.produtos.update(prod.id, { sincronizado: 1 });
+          });
+        }
+
+        if (lotesPendentes.length > 0) {
+          const payloadLotes = await Promise.all(lotesPendentes.map(async lote => {
+            const produto = await db.produtos.get(lote.produtoId);
+            if (!produto) throw new Error(`Produto local não encontrado para o lote ${lote.id}.`);
+            return {
+              id: lote.id,
+              loja_id: lojaId,
+              produto_codigo: produto.codigo,
+              validade: lote.validade,
+              quantidade: Number(lote.quantidade) || 0
+            };
+          }));
+
+          const { error: erroLotes } = await supabase
+            .from('lotes_produtos')
+            .upsert(payloadLotes, { onConflict: 'id' });
+          if (erroLotes) throw erroLotes;
+
+          await db.transaction('rw', db.lotes, async () => {
+            for (const lote of lotesPendentes) {
+              const loteAtual = await db.lotes.get(lote.id);
+              if (
+                loteAtual &&
+                loteAtual.produtoId === lote.produtoId &&
+                loteAtual.validade === lote.validade &&
+                loteAtual.quantidade === lote.quantidade
+              ) {
+                await db.lotes.update(lote.id, { sincronizado: 1 });
+              }
+            }
+          });
         }
 
         // --- SINCRONIZA VENDAS ---

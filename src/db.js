@@ -2,11 +2,12 @@ import Dexie from 'dexie';
 
 export const db = new Dexie('MerceariaDB');
 
-// Subimos para a versão 6 adicionando a flag de sincronização
-db.version(6).stores({
+// Subimos para a versão 7 para guardar lotes e respetivas validades.
+db.version(7).stores({
   usuarios: '++id, username, role', 
   produtos: '++id, &codigo, &nome, categoria, subcategoria, precoVenda, precoCusto, stock, unidadeMedida, sincronizado', 
   vendas: '++id, data, vendedorId, total, sincronizado',
+  lotes: 'id, produtoId, validade, sincronizado',
   sistema: 'id' 
 });
 
