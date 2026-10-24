@@ -5,10 +5,19 @@ import bcrypt from 'bcryptjs';
 export const AuthContext = createContext();
 
 // Funções auxiliares para gerir o cookie
+const getCookieOptions = () => {
+  const isSecureContext = window.location.protocol === 'https:';
+  return [
+    'path=/',
+    'SameSite=Lax',
+    ...(isSecureContext ? ['Secure'] : [])
+  ].join('; ');
+};
+
 const setCookie = (name, value, hours) => {
   const date = new Date();
   date.setTime(date.getTime() + (hours * 60 * 60 * 1000));
-  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${date.toUTCString()}; path=/; SameSite=Strict; Secure`;
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${date.toUTCString()}; ${getCookieOptions()}`;
 };
 
 const getCookie = (name) => {
@@ -18,7 +27,7 @@ const getCookie = (name) => {
 };
 
 const deleteCookie = (name) => {
-  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Strict; Secure`;
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; ${getCookieOptions()}`;
 };
 
 export function AuthProvider({ children }) {
@@ -53,7 +62,11 @@ export function AuthProvider({ children }) {
 
     const sessaoGuardada = getCookie('vulpe_mart_session');
     if (sessaoGuardada) {
-      setUser(JSON.parse(sessaoGuardada));
+      try {
+        setUser(JSON.parse(sessaoGuardada));
+      } catch {
+        deleteCookie('vulpe_mart_session');
+      }
     }
     setLoading(false);
   };
