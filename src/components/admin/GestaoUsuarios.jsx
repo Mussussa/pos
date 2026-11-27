@@ -38,8 +38,10 @@ export function GestaoUsuarios() {
         id: 'perfil_loja',
         nome_loja: nomeLoja,
         telefone: telefoneLoja,
-        endereco: enderecoLoja
+        endereco: enderecoLoja,
+        sincronizado: 0,
       });
+      if (navigator.onLine) window.dispatchEvent(new Event('online'));
       setMsgPerfil('✅ Dados do recibo atualizados!');
       setTimeout(() => setMsgPerfil(''), 3000);
     } catch (err) {

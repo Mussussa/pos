@@ -361,6 +361,7 @@ export function TerminalVendas() {
 
     const novaVenda = {
       data: new Date().toISOString(),
+      sync_id: crypto.randomUUID(),
       vendedorId: 1, 
       total: totalVenda, 
       lucroTotal,
@@ -374,6 +375,7 @@ export function TerminalVendas() {
           codigo: item.codigo || "",
           quantidade: qtdFinal,
           preco: Number(item.precoVenda || 0),
+          precoCusto: Number(item.precoCusto || 0),
         };
       }),
     };
