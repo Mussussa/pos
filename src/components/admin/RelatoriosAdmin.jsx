@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db';
 import { 
@@ -6,6 +6,39 @@ import {
   LineChart, Line
 } from 'recharts';
 import { Search, ChevronLeft, ChevronRight, FileText, Download, Calendar } from 'lucide-react';
+
+async function buscarTodosOsRegistos(supabase, tabela, colunas, lojaId) {
+  const tamanhoPagina = 500;
+  const primeiraPagina = await supabase
+    .from(tabela)
+    .select(colunas, { count: 'exact' })
+    .eq('loja_id', lojaId)
+    .order('id', { ascending: true })
+    .range(0, tamanhoPagina - 1);
+
+  if (primeiraPagina.error) throw primeiraPagina.error;
+  if (primeiraPagina.count === null) {
+    throw new Error(`Não foi possível confirmar o total de registos de ${tabela}.`);
+  }
+
+  const registos = [...(primeiraPagina.data || [])];
+  while (registos.length < primeiraPagina.count) {
+    const pagina = await supabase
+      .from(tabela)
+      .select(colunas)
+      .eq('loja_id', lojaId)
+      .order('id', { ascending: true })
+      .range(registos.length, registos.length + tamanhoPagina - 1);
+
+    if (pagina.error) throw pagina.error;
+    if (!pagina.data?.length) {
+      throw new Error(`A paginação de ${tabela} terminou antes de carregar todos os registos.`);
+    }
+    registos.push(...pagina.data);
+  }
+
+  return registos;
+}
 
 // ==========================================
 // MÓDULO: SIMULADOR DE PREÇO MÍNIMO (TEMA CLARO MISTO)
@@ -129,9 +162,12 @@ function ModuloPrecoMinimo({ produtos }) {
 // ==========================================
 export function RelatoriosAdmin() {
   const [filtroTempo, setFiltroTempo] = useState('tudo');
-  
+  const [dadosNuvem, setDadosNuvem] = useState(null);
+  const [estadoNuvem, setEstadoNuvem] = useState({ carregando: true, erro: null });
+
   const vendasRaw = useLiveQuery(() => db.vendas.orderBy('data').reverse().toArray());
   const produtos = useLiveQuery(() => db.produtos.toArray());
+  const configLoja = useLiveQuery(async () => (await db.sistema.get('config_loja')) || null);
   const dadosLotes = useLiveQuery(async () => {
     const registros = await db.lotes.toArray();
     const hoje = new Date();
@@ -141,9 +177,147 @@ export function RelatoriosAdmin() {
   const lotes = dadosLotes?.registros;
   const hojeValidade = dadosLotes?.hoje;
 
+  useEffect(() => {
+    if (configLoja === undefined) return undefined;
+
+    let ativo = true;
+    const carregarDadosNuvem = async () => {
+      if (!navigator.onLine) {
+        setDadosNuvem(null);
+        setEstadoNuvem({ carregando: false, erro: 'Dispositivo offline.' });
+        return;
+      }
+      if (!configLoja?.loja_id) {
+        setDadosNuvem(null);
+        setEstadoNuvem({
+          carregando: false,
+          erro: 'Não existe uma loja configurada para consultar os dados da nuvem.',
+        });
+        return;
+      }
+
+      setEstadoNuvem({ carregando: true, erro: null });
+      try {
+        const { supabase } = await import('../../services/supabase');
+        const { data: { session }, error: erroSessao } = await supabase.auth.getSession();
+        if (erroSessao) throw erroSessao;
+        if (!session) {
+          throw new Error('Inicia sessão no Supabase para consultar o histórico partilhado.');
+        }
+
+        const [vendasNuvem, produtosNuvem] = await Promise.all([
+          buscarTodosOsRegistos(
+            supabase,
+            'vendas',
+            'id,data_venda,vendedor_id,total,itens',
+            configLoja.loja_id,
+          ),
+          buscarTodosOsRegistos(
+            supabase,
+            'produtos',
+            'id,codigo,nome,preco_custo',
+            configLoja.loja_id,
+          ),
+        ]);
+
+        if (!ativo) return;
+        setDadosNuvem({ vendas: vendasNuvem, produtos: produtosNuvem });
+        setEstadoNuvem({ carregando: false, erro: null });
+      } catch (erro) {
+        if (!ativo) return;
+        setDadosNuvem(null);
+        setEstadoNuvem({
+          carregando: false,
+          erro: erro.message || 'Falha ao carregar os dados do Supabase.',
+        });
+      }
+    };
+
+    carregarDadosNuvem();
+    window.addEventListener('online', carregarDadosNuvem);
+    return () => {
+      ativo = false;
+      window.removeEventListener('online', carregarDadosNuvem);
+    };
+  }, [configLoja]);
+
+  const produtosParaLucro = useMemo(() => {
+    const porCodigo = new Map();
+    const porNome = new Map();
+    const porId = new Map();
+    const adicionarProduto = (produto, remoto = false) => {
+      const custo = Number(remoto ? produto.preco_custo : produto.precoCusto);
+      if (!Number.isFinite(custo)) return;
+      const dadosProduto = { precoCusto: custo };
+      if (produto.codigo) porCodigo.set(String(produto.codigo).trim().toLowerCase(), dadosProduto);
+      if (produto.nome) porNome.set(String(produto.nome).trim().toLowerCase(), dadosProduto);
+      if (!remoto && produto.id !== undefined) porId.set(produto.id, dadosProduto);
+    };
+
+    (produtos || []).forEach((produto) => adicionarProduto(produto));
+    (dadosNuvem?.produtos || []).forEach((produto) => adicionarProduto(produto, true));
+    return { porCodigo, porNome, porId };
+  }, [produtos, dadosNuvem]);
+
+  const vendasFonte = useMemo(() => {
+    if (!dadosNuvem) return vendasRaw || [];
+
+    const vendasPendentes = (vendasRaw || [])
+      .filter((venda) => !venda.sincronizado)
+      .map((venda) => ({ ...venda, origemLocal: true }));
+    const vendasRemotas = dadosNuvem.vendas.map((venda) => ({
+      ...venda,
+      data: venda.data_venda,
+      total: Number(venda.total) || 0,
+      itens: venda.itens || [],
+      sincronizado: true,
+    }));
+
+    return [...vendasRemotas, ...vendasPendentes].sort(
+      (a, b) => new Date(b.data || b.data_venda) - new Date(a.data || a.data_venda),
+    );
+  }, [dadosNuvem, vendasRaw]);
+
+  const vendasComLucro = useMemo(
+    () =>
+      vendasFonte.map((venda) => {
+        if (
+          venda.lucroTotal !== null &&
+          venda.lucroTotal !== undefined &&
+          Number.isFinite(Number(venda.lucroTotal))
+        ) {
+          return { ...venda, lucroTotal: Number(venda.lucroTotal), lucroEstimado: false };
+        }
+
+        let lucroTotal = 0;
+        let lucroIncompleto = !Array.isArray(venda.itens) || venda.itens.length === 0;
+        (venda.itens || []).forEach((item) => {
+          const produto =
+            (item.codigo && produtosParaLucro.porCodigo.get(String(item.codigo).trim().toLowerCase())) ||
+            (venda.origemLocal && produtosParaLucro.porId.get(item.produtoId)) ||
+            (item.nome && produtosParaLucro.porNome.get(String(item.nome).trim().toLowerCase()));
+          const preco = Number(item.preco ?? item.precoVenda);
+          const quantidade = Number(item.quantidade);
+          if (!produto || !Number.isFinite(preco) || !Number.isFinite(quantidade)) {
+            lucroIncompleto = true;
+            return;
+          }
+          lucroTotal += (preco - produto.precoCusto) * quantidade;
+        });
+
+        return {
+          ...venda,
+          lucroTotal,
+          lucroEstimado: true,
+          lucroIncompleto,
+        };
+      }),
+    [vendasFonte, produtosParaLucro],
+  );
+
   // 1. Lógica de Filtragem de Datas
   const vendas = useMemo(() => {
-    if (!vendasRaw) return [];
+    if (!vendasComLucro) return [];
     
     const agora = new Date();
     const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
@@ -152,14 +326,14 @@ export function RelatoriosAdmin() {
     const inicio7Dias = new Date(inicioHoje);
     inicio7Dias.setDate(inicio7Dias.getDate() - 7);
 
-    return vendasRaw.filter(v => {
+    return vendasComLucro.filter(v => {
       const dataVenda = new Date(v.data || v.data_venda); // Garante suporte a ambas propriedades de data
       if (filtroTempo === 'hoje') return dataVenda >= inicioHoje;
       if (filtroTempo === 'ontem') return dataVenda >= inicioOntem && dataVenda < inicioHoje;
       if (filtroTempo === '7dias') return dataVenda >= inicio7Dias;
       return true; // 'tudo'
     });
-  }, [vendasRaw, filtroTempo]);
+  }, [vendasComLucro, filtroTempo]);
 
   // 2. Cálculos Gerais (CORRIGIDO com .total || .totalVenda)
   const resumo = useMemo(() => {
@@ -226,6 +400,8 @@ export function RelatoriosAdmin() {
   }, [vendas, produtos]);
   const { totalReceitas, totalLucro, dadosCategorias, dadosTopProdutos, dadosEvolucao } = resumo;
   const numeroVendas = vendas.length;
+  const vendasComLucroEstimado = vendas.filter((venda) => venda.lucroEstimado).length;
+  const vendasComLucroIncompleto = vendas.filter((venda) => venda.lucroIncompleto).length;
 
   const alertasValidade = useMemo(() => {
     if (!hojeValidade) return [];
@@ -285,7 +461,7 @@ export function RelatoriosAdmin() {
       new Date(v.data || v.data_venda).toLocaleString('pt-MZ'),
       v.itens?.map(i => `${i.quantidade}x ${i.nome}`).join('\n') || 'S/ Detalhes',
       `${Number(v.total || v.totalVenda || 0).toFixed(2)} MT`,
-      `${Number(v.lucroTotal || 0).toFixed(2)} MT`
+      `${v.lucroEstimado ? '≈ ' : ''}${Number(v.lucroTotal || 0).toFixed(2)} MT`
     ]);
 
     autoTable(doc, {
@@ -385,13 +561,39 @@ export function RelatoriosAdmin() {
         </div>
       </div>
 
+      {estadoNuvem.carregando && (
+        <p className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+          A carregar o histórico partilhado do Supabase...
+        </p>
+      )}
+      {estadoNuvem.erro && (
+        <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          Não foi possível carregar o histórico partilhado ({estadoNuvem.erro}).
+          Os indicadores mostram apenas os dados locais deste dispositivo.
+        </p>
+      )}
+      {!estadoNuvem.carregando && !estadoNuvem.erro && dadosNuvem && (
+        <p className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+          Histórico carregado do Supabase, incluindo vendas locais ainda não sincronizadas.
+        </p>
+      )}
+      {vendasComLucroEstimado > 0 && (
+        <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          O lucro de {vendasComLucroEstimado} transação(ões) foi estimado com o custo atual dos produtos.
+          {vendasComLucroIncompleto > 0 &&
+            ` Em ${vendasComLucroIncompleto} transação(ões), faltam custos de produtos e o valor pode estar incompleto.`}
+        </p>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <div className="bg-white p-6 rounded-lg shadow-sm border border-zinc-200">
           <p className="text-zinc-500 text-sm font-semibold uppercase">Receita Bruta ({filtroTempo})</p>
           <p className="text-3xl font-bold text-zinc-800 mt-2">{totalReceitas.toFixed(2)} MT</p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow-sm border border-zinc-200">
-          <p className="text-zinc-500 text-sm font-semibold uppercase">Lucro Líquido ({filtroTempo})</p>
+          <p className="text-zinc-500 text-sm font-semibold uppercase">
+            Lucro Líquido{vendasComLucroEstimado > 0 ? " Estimado" : ""} ({filtroTempo})
+          </p>
           <p className="text-3xl font-bold text-orange-500 mt-2">{totalLucro.toFixed(2)} MT</p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow-sm border border-zinc-200">
@@ -431,7 +633,10 @@ export function RelatoriosAdmin() {
                     {Number(v.total || v.totalVenda || 0).toFixed(2)} MT
                   </td>
                   <td className="p-3 text-orange-600 font-bold text-right">
-                    {Number(v.lucroTotal || 0).toFixed(2)} MT
+                    <span title={v.lucroIncompleto ? "Estimativa incompleta: falta o custo de um ou mais produtos." : v.lucroEstimado ? "Estimado com o custo atual do produto." : "Lucro registado na venda."}>
+                      {v.lucroEstimado ? "≈ " : ""}
+                      {Number(v.lucroTotal || 0).toFixed(2)} MT
+                    </span>
                   </td>
                 </tr>
               ))}

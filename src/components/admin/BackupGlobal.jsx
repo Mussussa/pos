@@ -27,7 +27,7 @@ export function BackupGlobal() {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((evento, session) => {
       setSessao(session);
       if (session) {
         obterOuRecuperarLoja(session.user.id).then(lojaId => {
@@ -35,6 +35,9 @@ export function BackupGlobal() {
         });
       } else {
         setLojaAtual(null);
+        if (evento === 'SIGNED_OUT') {
+          setStatus('⚠️ Sessão Supabase encerrada. Os dados pendentes continuam guardados neste dispositivo; inicia sessão para retomar o backup na nuvem.');
+        }
       }
     });
 
@@ -153,7 +156,6 @@ export function BackupGlobal() {
             hint: rpcError.hint,
             sessaoDisponivel: Boolean(authData.session),
           });
-          await supabase.auth.signOut(); // Limpa se houver erro interno
           return setStatus(`🚨 Erro ao registar a loja: ${rpcError.message}`);
         }
 
