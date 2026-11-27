@@ -37,9 +37,9 @@ export function GestaoProdutos() {
   const lotesPorProduto = useMemo(() => {
     const agrupados = new Map();
     (lotes || []).forEach((lote) => {
-      if (Number(lote.quantidade) <= 0) return;
       const registos = agrupados.get(lote.produtoId) || [];
       registos.push({
+        id: lote.id,
         quantidade: Number(lote.quantidade),
         validade: lote.validade,
       });
@@ -62,6 +62,7 @@ export function GestaoProdutos() {
   const [stock, setStock] = useState("");
   const [unidadeMedida, setUnidadeMedida] = useState("Un."); 
   const [validade, setValidade] = useState("");
+  const [validadeLotes, setValidadeLotes] = useState({});
 
   const iniciarEdicao = (produto) => {
     setErro("");
@@ -79,6 +80,11 @@ export function GestaoProdutos() {
     setStock(produto.stock);
     setUnidadeMedida(produto.unidadeMedida || "Un.");
     setValidade("");
+    setValidadeLotes(
+      Object.fromEntries(
+        (lotesPorProduto.get(produto.id) || []).map((lote) => [lote.id, lote.validade || ""])
+      )
+    );
     formularioRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -93,6 +99,7 @@ export function GestaoProdutos() {
     setStock("");
     setUnidadeMedida("Un.");
     setValidade("");
+    setValidadeLotes({});
     setErro("");
   };
 
@@ -119,6 +126,7 @@ export function GestaoProdutos() {
     if (pVenda < pCusto) return setErro("O preço de venda não pode ser inferior ao preço de custo.");
     if (!Number.isFinite(pStock) || pStock < 0) return setErro("O stock não pode ser negativo.");
     if (!produtos) return setErro("A lista de produtos ainda está a carregar. Tenta novamente.");
+    if (produtoEmEdicao && !lotes) return setErro("A lista de lotes ainda está a carregar. Tenta novamente.");
 
     const duplicado = produtos.find(p => 
       (p.nome.toLowerCase() === pNome.toLowerCase() || p.codigo === pCodigo) && p.id !== produtoEmEdicao
@@ -185,6 +193,20 @@ export function GestaoProdutos() {
                 });
                 quantidadeARemover -= reducao;
               }
+            }
+          }
+
+          for (const [loteId, novaValidade] of Object.entries(validadeLotes)) {
+            const loteAtual = await db.lotes.get(loteId);
+            const validadeAtualizada = novaValidade || null;
+            if (
+              loteAtual?.produtoId === produtoEmEdicao &&
+              (loteAtual.validade || null) !== validadeAtualizada
+            ) {
+              await db.lotes.update(loteId, {
+                validade: validadeAtualizada,
+                sincronizado: 0,
+              });
             }
           }
         } else {
@@ -407,9 +429,39 @@ export function GestaoProdutos() {
             className="bg-white border border-zinc-300 text-zinc-900 p-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
           />
           <span className="text-xs font-normal text-zinc-500">
-            Opcional para produtos sem validade. Ao editar, a data aplica-se apenas ao aumento de stock.
+            Esta data aplica-se ao stock que adicionares. Para alterar a validade de lotes existentes, edita-os abaixo.
           </span>
         </label>
+
+        {produtoEmEdicao && (
+          <div className="md:col-span-2 rounded-lg border border-zinc-200 p-4">
+            <h3 className="font-bold text-zinc-800 mb-3">Validades dos lotes existentes</h3>
+            {!lotes && <p className="text-sm text-zinc-500">A carregar lotes...</p>}
+            {lotes && (lotesPorProduto.get(produtoEmEdicao) || []).filter((lote) => lote.quantidade > 0).length === 0 && (
+              <p className="text-sm text-zinc-500">Este produto não tem lotes com stock registado.</p>
+            )}
+            <div className="space-y-3">
+              {(lotesPorProduto.get(produtoEmEdicao) || [])
+                .filter((lote) => lote.quantidade > 0)
+                .map((lote) => (
+                  <label key={lote.id} className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm text-zinc-700">
+                    <span className="sm:min-w-40">Quantidade: {lote.quantidade} {unidadeMedida}</span>
+                    <input
+                      type="date"
+                      value={validadeLotes[lote.id] ?? lote.validade ?? ""}
+                      onChange={(e) => setValidadeLotes((anteriores) => ({
+                        ...anteriores,
+                        [lote.id]: e.target.value,
+                      }))}
+                      aria-label={`Validade do lote com ${lote.quantidade} ${unidadeMedida}`}
+                      className="bg-white border border-zinc-300 text-zinc-900 p-2 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                    />
+                    <span className="text-xs text-zinc-500">Deixa vazio para remover a validade.</span>
+                  </label>
+                ))}
+            </div>
+          </div>
+        )}
 
         <div className="md:col-span-2 flex gap-4 mt-2">
           <button
@@ -499,6 +551,7 @@ export function GestaoProdutos() {
                   <span className="text-xs text-zinc-500 mt-1">
                     Lotes: {lotesPorProduto
                       .get(p.id)
+                      ?.filter((lote) => lote.quantidade > 0)
                       ?.map((lote) => `${lote.quantidade} ${p.unidadeMedida || "Un."} — ${lote.validade || "sem validade"}`)
                       .join(" | ") || "stock anterior sem lotes registados"}
                   </span>

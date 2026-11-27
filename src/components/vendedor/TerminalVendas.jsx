@@ -122,8 +122,18 @@ export function TerminalVendas() {
           ? total + (Number(lote.quantidade) || 0)
           : total
       ), 0);
-      return { ...produto, stock: Math.min(Number(produto.stock), stockAntigo + stockNaoVencido) };
-    }).filter((produto) => produto.stock > 0);
+      const stockVencido = lotesProduto.reduce((total, lote) => (
+        lote.validade && lote.validade < hoje
+          ? total + (Number(lote.quantidade) || 0)
+          : total
+      ), 0);
+      return {
+        ...produto,
+        stock: Math.min(Number(produto.stock), stockAntigo + stockNaoVencido),
+        stockTotal: Number(produto.stock) || 0,
+        stockVencido,
+      };
+    }).filter((produto) => produto.stockTotal > 0);
   }, [produtosBase, lotes, hoje]);
   const vendas = useLiveQuery(() => db.vendas.toArray());
   const perfilLoja = useLiveQuery(() => db.sistema.get('perfil_loja'));
@@ -190,6 +200,7 @@ export function TerminalVendas() {
   const produtosMaisVendidos = useMemo(() => {
     if (!produtos) return [];
     return [...produtos]
+      .filter((produto) => Number(produto.stock) > 0)
       .sort((a, b) => (contagemVendas[b.id] || 0) - (contagemVendas[a.id] || 0))
       .slice(0, 5);
   }, [produtos, contagemVendas]);
@@ -208,6 +219,10 @@ export function TerminalVendas() {
   }, [vendasOrdenadas, paginaHistorico]);
 
   const adicionarAoCarrinho = (produto) => {
+    if (Number(produto.stock) <= 0) {
+      alert(`${produto.nome} tem apenas stock vencido e não pode ser vendido.`);
+      return;
+    }
     if (Number(produto.precoVenda) < Number(produto.precoCusto)) {
       alert(`O preço de venda de ${produto.nome} é inferior ao preço de custo.`);
       return;
@@ -726,7 +741,12 @@ export function TerminalVendas() {
             <button 
               key={p.id}
               onClick={() => adicionarAoCarrinho(p)}
-              className="bg-white border border-zinc-200 p-2 rounded-lg shadow-sm hover:border-orange-500 hover:shadow-md transition-all text-left flex flex-col min-h-[55px] md:min-h-[65px] active:scale-95 group"
+              disabled={p.stock <= 0}
+              className={`bg-white border border-zinc-200 p-2 rounded-lg shadow-sm transition-all text-left flex flex-col min-h-[55px] md:min-h-[65px] group ${
+                p.stock > 0
+                  ? "hover:border-orange-500 hover:shadow-md active:scale-95"
+                  : "opacity-75 cursor-not-allowed"
+              }`}
             >
               <div className="w-full">
                 <div className="flex justify-between items-center mb-1">
@@ -739,7 +759,14 @@ export function TerminalVendas() {
               </div>
               
               <div className="flex flex-wrap justify-between items-end mt-auto pt-1.5 w-full gap-1">
-                <span className="text-[9px] md:text-[10px] font-bold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded whitespace-nowrap">Stk: {p.stock} {p.unidadeMedida}</span>
+                <div className="flex flex-wrap gap-1">
+                  <span className="text-[9px] md:text-[10px] font-bold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded whitespace-nowrap">Vendável: {p.stock} {p.unidadeMedida}</span>
+                  {p.stockVencido > 0 && (
+                    <span className="text-[9px] md:text-[10px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded whitespace-nowrap">
+                      Vencido: {p.stockVencido} {p.unidadeMedida}
+                    </span>
+                  )}
+                </div>
                 <span className="font-black text-orange-600 text-sm md:text-base leading-none whitespace-nowrap">{Number(p.precoVenda || 0).toFixed(2)} <span className="text-[9px] md:text-[10px] text-orange-400">MT</span></span>
               </div>
             </button>
