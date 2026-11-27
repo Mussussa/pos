@@ -133,6 +133,7 @@ export function TerminalVendas() {
   const [pesquisa, setPesquisa] = useState("");
   const [carrinho, setCarrinho] = useState([]);
   const [imprimirRecibo, setImprimirRecibo] = useState(true);
+  const [valorRecebido, setValorRecebido] = useState("");
 
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [paginaHistorico, setPaginaHistorico] = useState(1);
@@ -324,6 +325,8 @@ export function TerminalVendas() {
     const precoUnitario = Number(item.precoVenda || 0);
     return acc + precoUnitario * qtd;
   }, 0);
+  const valorRecebidoNumerico = Number(valorRecebido.replace(",", ".")) || 0;
+  const diferencaPagamento = valorRecebidoNumerico - totalVenda;
 
   const finalizarVenda = async () => {
     if (carrinho.length === 0) return;
@@ -419,6 +422,7 @@ export function TerminalVendas() {
         window.print();
       }
       setCarrinho([]);
+      setValorRecebido("");
 
       if (navigator.onLine) {
         window.dispatchEvent(new Event('online'));
@@ -886,6 +890,38 @@ export function TerminalVendas() {
         </div>
 
         <div className="mt-4 border-t-2 border-zinc-200 pt-4 bg-white shrink-0">
+          <label
+            htmlFor="valorRecebido"
+            className="block text-sm font-black text-zinc-600 uppercase mb-2"
+          >
+            Valor Recebido
+          </label>
+          <div className="relative mb-3">
+            <input
+              id="valorRecebido"
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              placeholder="0.00"
+              value={valorRecebido}
+              onChange={(e) => setValorRecebido(e.target.value)}
+              className="w-full bg-white border-2 border-zinc-200 text-zinc-900 p-3 pr-12 rounded-xl focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+            />
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 font-bold text-zinc-500">
+              MT
+            </span>
+          </div>
+          <div
+            className={`flex justify-between items-center mb-4 px-2 font-bold ${
+              diferencaPagamento < 0 ? "text-red-600" : "text-green-700"
+            }`}
+            aria-live="polite"
+          >
+            <span>{diferencaPagamento < 0 ? "Valor em falta" : "Troco"}</span>
+            <span>{Math.abs(diferencaPagamento).toFixed(2)} MT</span>
+          </div>
+
           <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-end mb-4 bg-zinc-100 p-4 rounded-2xl border-2 border-zinc-200 gap-2">
             <span className="text-sm md:text-base font-black text-zinc-500 uppercase">
               Total a Pagar

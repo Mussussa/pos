@@ -102,31 +102,72 @@ export function BackupGlobal() {
         setStatus('✅ Login efetuado!');
       } else {
         // 1. BARREIRA DE SEGURANÇA: Verifica a chave ANTES de criar o utilizador
+        console.info('[Registo loja] A verificar a chave de ativação.');
         const { data: chaveValida, error: erroCheck } = await supabase.rpc('verificar_chave', { p_chave: chave });
         
-        if (erroCheck || !chaveValida) {
-          return setStatus('🚨 Erro: A Chave de Licença é inválida ou já foi utilizada.'); // Aborta aqui e não sai da tela!
+        if (erroCheck) {
+          console.error('[Registo loja] Falha ao verificar chave.', {
+            code: erroCheck.code,
+            message: erroCheck.message,
+          });
+          return setStatus(`🚨 Erro ao verificar chave: ${erroCheck.message}`);
         }
 
+        if (!chaveValida) {
+          console.warn('[Registo loja] Chave inválida ou já utilizada.');
+          return setStatus('🚨 Erro: A Chave de Licença é inválida ou já foi utilizada.'); // Aborta aqui e não sai da tela!
+        }
+        console.info('[Registo loja] Chave validada.');
+
         // 2. Chave válida! Agora sim, cria a conta no Supabase Auth
+        console.info('[Registo loja] A criar conta de autenticação.');
         const { data: authData, error: authError } = await supabase.auth.signUp({ email, password: senha });
-        if (authError) throw authError;
+        if (authError) {
+          console.error('[Registo loja] Falha ao criar conta.', {
+            status: authError.status,
+            code: authError.code,
+            message: authError.message,
+          });
+          throw authError;
+        }
+
+        console.info('[Registo loja] Conta criada.', {
+          utilizadorCriado: Boolean(authData.user),
+          sessaoDisponivel: Boolean(authData.session),
+        });
+        if (!authData.session) {
+          console.warn('[Registo loja] O Supabase não devolveu sessão após o registo; a RPC exige utilizador autenticado. Confirma a configuração de confirmação de email.');
+        }
 
         // 3. Regista a loja e queima a chave
+        console.info('[Registo loja] A chamar RPC registar_loja_com_chave.');
         const { data: rpcData, error: rpcError } = await supabase.rpc('registar_loja_com_chave', {
           p_nome_loja: nomeLoja, p_chave: chave
         });
         
         if (rpcError) {
+          console.error('[Registo loja] RPC falhou.', {
+            code: rpcError.code,
+            message: rpcError.message,
+            details: rpcError.details,
+            hint: rpcError.hint,
+            sessaoDisponivel: Boolean(authData.session),
+          });
           await supabase.auth.signOut(); // Limpa se houver erro interno
           return setStatus(`🚨 Erro ao registar a loja: ${rpcError.message}`);
         }
 
+        console.info('[Registo loja] RPC concluída com sucesso.');
         await db.sistema.put({ id: 'config_loja', loja_id: rpcData.loja_id, nome_loja: nomeLoja });
         setLojaAtual({ id: rpcData.loja_id, nome: nomeLoja });
         setStatus('✅ Loja ativada e conectada!');
       }
     } catch (err) {
+      console.error('[Autenticação Supabase] Operação falhou.', {
+        status: err.status,
+        code: err.code,
+        message: err.message,
+      });
       setStatus(`🚨 Erro: ${err.message}`);
     }
   };
