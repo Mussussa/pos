@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { db } from './db';
-import bcrypt from 'bcryptjs';
 
 export const AuthContext = createContext();
 
@@ -32,22 +31,7 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
-  useEffect(() => {
-    verificarSistema();
-
-    // O browser destrói o cookie sozinho ao fim de 6h.
-    // Este intervalo serve para avisar a interface visual e executar o logout se a aba ficar aberta.
-    const intervaloValidade = setInterval(() => {
-      if (!getCookie('vulpe_mart_session') && user) {
-        logout();
-        alert("A tua sessão expirou após 6 horas. Faz login novamente.");
-      }
-    }, 60000); // Verifica a cada 60 segundos
-
-    return () => clearInterval(intervaloValidade);
-  }, [user, logout]);
-
-  const verificarSistema = async () => {
+  const verificarSistema = useCallback(async () => {
     const adminExist = await db.usuarios.where('role').equals('admin').first();
     setNeedsSetup(!adminExist);
 
@@ -56,11 +40,31 @@ export function AuthProvider({ children }) {
       setUser(JSON.parse(sessaoGuardada));
     }
     setLoading(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    verificarSistema();
+  }, [verificarSistema]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    // O browser destrói o cookie sozinho ao fim de 6h.
+    // Este intervalo serve para avisar a interface visual e executar o logout se a aba ficar aberta.
+    const intervaloValidade = setInterval(() => {
+      if (!getCookie('vulpe_mart_session')) {
+        logout();
+        alert("A tua sessão expirou após 6 horas. Faz login novamente.");
+      }
+    }, 60000); // Verifica a cada 60 segundos
+
+    return () => clearInterval(intervaloValidade);
+  }, [user, logout]);
 
   const configurarAdmin = async (username, password) => {
-    const salt = bcrypt.genSaltSync(10);
-    const hash = bcrypt.hashSync(password, salt);
+    const { default: bcrypt } = await import('bcryptjs');
+    const salt = await bcrypt.genSalt(10);
+    const hash = await bcrypt.hash(password, salt);
     
     const novoAdmin = { username, passwordHash: hash, role: 'admin' };
     await db.usuarios.add(novoAdmin);
@@ -73,7 +77,8 @@ export function AuthProvider({ children }) {
     const dbUser = await db.usuarios.where('username').equals(username).first();
     if (!dbUser) throw new Error('Utilizador não encontrado.');
 
-    const senhaValida = bcrypt.compareSync(password, dbUser.passwordHash);
+    const { default: bcrypt } = await import('bcryptjs');
+    const senhaValida = await bcrypt.compare(password, dbUser.passwordHash);
     if (!senhaValida) throw new Error('Senha incorreta.');
 
     const sessao = { id: dbUser.id, username: dbUser.username, role: dbUser.role };

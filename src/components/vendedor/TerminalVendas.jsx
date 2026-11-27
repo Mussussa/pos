@@ -14,8 +14,6 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import jsPDF from "jspdf";
-import "jspdf-autotable";
 
 const obterDataLocal = () => {
   const data = new Date();
@@ -87,6 +85,16 @@ const mapaCategorias = {
   },
 };
 
+const categorias = [
+  { id: "todas", label: "Todas" },
+  { id: "alimentacao", label: "Alimentação" },
+  { id: "bebidas", label: "Bebidas" },
+  { id: "limpeza", label: "Limpeza" },
+  { id: "beleza_vestuario", label: "Beleza e Vestuário" },
+  { id: "veiculos_pecas", label: "Veículos e Peças" },
+  { id: "diversos", label: "Diversos" },
+];
+
 export function TerminalVendas() {
   const produtosBase = useLiveQuery(() => db.produtos.toArray());
   const dadosLotes = useLiveQuery(async () => {
@@ -97,8 +105,16 @@ export function TerminalVendas() {
   const hoje = dadosLotes?.hoje;
   const produtos = useMemo(() => {
     if (!produtosBase || !lotes) return [];
+
+    const lotesPorProduto = new Map();
+    lotes.forEach((lote) => {
+      const lotesProduto = lotesPorProduto.get(lote.produtoId) || [];
+      lotesProduto.push(lote);
+      lotesPorProduto.set(lote.produtoId, lotesProduto);
+    });
+
     return produtosBase.map((produto) => {
-      const lotesProduto = lotes.filter((lote) => lote.produtoId === produto.id);
+      const lotesProduto = lotesPorProduto.get(produto.id) || [];
       const stockEmLotes = lotesProduto.reduce((total, lote) => total + (Number(lote.quantidade) || 0), 0);
       const stockAntigo = Math.max(Number(produto.stock) - stockEmLotes, 0);
       const stockNaoVencido = lotesProduto.reduce((total, lote) => (
@@ -121,16 +137,6 @@ export function TerminalVendas() {
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [paginaHistorico, setPaginaHistorico] = useState(1);
   const itensPorPaginaHistorico = 15;
-
-const categorias = [
-    { id: "todas", label: "Todas" },
-    { id: "alimentacao", label: "Alimentação" },
-    { id: "bebidas", label: "Bebidas" },
-    { id: "limpeza", label: "Limpeza" },
-    { id: "beleza_vestuario", label: "Beleza e Vestuário" },
-    { id: "veiculos_pecas", label: "Veículos e Peças" },
-    { id: "diversos", label: "Diversos" },
-  ];
 
   const mudarCategoria = (catId) => {
     setFiltroCategoria(catId);
@@ -424,7 +430,11 @@ const categorias = [
     }
   };
 
-  const exportarHistoricoVendedorPDF = () => {
+  const exportarHistoricoVendedorPDF = async () => {
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
     const alturaEstimada = 100 + (vendasOrdenadas.length * 15);
     const doc = new jsPDF({
       orientation: "portrait",
@@ -463,7 +473,7 @@ const categorias = [
       `${Number(v.total || v.totalVenda || 0).toFixed(2)} MT`,
     ]);
 
-    doc.autoTable({
+    autoTable(doc, {
       startY: 46,
       head: [["Data", "Artigos", "Total"]],
       body: tableData,

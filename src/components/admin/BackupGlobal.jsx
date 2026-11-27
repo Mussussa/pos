@@ -255,16 +255,17 @@ export function BackupGlobal() {
       const lojaId = lojaAtual?.id || (await obterOuRecuperarLoja(sessao?.user?.id));
       if (!lojaId) throw new Error('Loja não identificada.');
 
-      const { data: prodNuvem, error: errProd } = await supabase.from('produtos').select('*').eq('loja_id', lojaId);
+      const [
+        { data: prodNuvem, error: errProd },
+        { data: vendasNuvem, error: errVendas },
+        { data: lotesNuvem, error: errLotes },
+      ] = await Promise.all([
+        supabase.from('produtos').select('*').eq('loja_id', lojaId),
+        supabase.from('vendas').select('*').eq('loja_id', lojaId),
+        supabase.from('lotes_produtos').select('*').eq('loja_id', lojaId),
+      ]);
       if (errProd) throw errProd;
-
-      const { data: vendasNuvem, error: errVendas } = await supabase.from('vendas').select('*').eq('loja_id', lojaId);
       if (errVendas) throw errVendas;
-
-      const { data: lotesNuvem, error: errLotes } = await supabase
-        .from('lotes_produtos')
-        .select('*')
-        .eq('loja_id', lojaId);
       if (errLotes) throw errLotes;
 
       await db.transaction('rw', db.produtos, db.vendas, db.lotes, async () => {
@@ -274,14 +275,17 @@ export function BackupGlobal() {
 
         const produtosLocaisPorCodigo = new Map();
         if (prodNuvem && prodNuvem.length > 0) {
-          for (const p of prodNuvem) {
-            const idLocal = await db.produtos.add({
+          const idsLocais = await db.produtos.bulkAdd(
+            prodNuvem.map((p) => ({
               codigo: p.codigo, nome: p.nome, categoria: p.categoria, subcategoria: p.subcategoria,
               precoVenda: Number(p.preco_venda), precoCusto: Number(p.preco_custo), stock: Number(p.stock),
               unidadeMedida: p.unidade_medida, sincronizado: 1
-            });
-            produtosLocaisPorCodigo.set(p.codigo, idLocal);
-          }
+            })),
+            { allKeys: true },
+          );
+          prodNuvem.forEach((produto, indice) => {
+            produtosLocaisPorCodigo.set(produto.codigo, idsLocais[indice]);
+          });
         }
         if (lotesNuvem && lotesNuvem.length > 0) {
           await db.lotes.bulkAdd(lotesNuvem

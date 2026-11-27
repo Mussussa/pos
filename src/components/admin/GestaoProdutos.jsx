@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { db } from "../../db";
 import { supabase } from "../../services/supabase"; // Importação crucial para apagar na nuvem
 import { useLiveQuery } from "dexie-react-hooks";
@@ -34,6 +34,19 @@ const mapaCategorias = {
 export function GestaoProdutos() {
   const produtos = useLiveQuery(() => db.produtos.toArray());
   const lotes = useLiveQuery(() => db.lotes.toArray());
+  const lotesPorProduto = useMemo(() => {
+    const agrupados = new Map();
+    (lotes || []).forEach((lote) => {
+      if (Number(lote.quantidade) <= 0) return;
+      const registos = agrupados.get(lote.produtoId) || [];
+      registos.push({
+        quantidade: Number(lote.quantidade),
+        validade: lote.validade,
+      });
+      agrupados.set(lote.produtoId, registos);
+    });
+    return agrupados;
+  }, [lotes]);
   const [erro, setErro] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("todas");
 
@@ -248,8 +261,12 @@ export function GestaoProdutos() {
     }
   };
 
-  const produtosFiltrados = produtos?.filter((p) =>
-    filtroCategoria === "todas" ? true : p.categoria === filtroCategoria
+  const produtosFiltrados = useMemo(
+    () =>
+      produtos?.filter((p) =>
+        filtroCategoria === "todas" ? true : p.categoria === filtroCategoria
+      ),
+    [produtos, filtroCategoria],
   );
 
   return (
@@ -449,9 +466,9 @@ export function GestaoProdutos() {
                     {p.categoria} &gt; {p.subcategoria}
                   </span>
                   <span className="text-xs text-zinc-500 mt-1">
-                    Lotes: {(lotes || [])
-                      .filter((lote) => lote.produtoId === p.id && Number(lote.quantidade) > 0)
-                        .map((lote) => `${Number(lote.quantidade)} ${p.unidadeMedida || "Un."} — ${lote.validade || "sem validade"}`)
+                    Lotes: {lotesPorProduto
+                      .get(p.id)
+                      ?.map((lote) => `${lote.quantidade} ${p.unidadeMedida || "Un."} — ${lote.validade || "sem validade"}`)
                       .join(" | ") || "stock anterior sem lotes registados"}
                   </span>
                 </div>

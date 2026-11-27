@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { db } from '../db'; // Ajusta o caminho do import se necessário
-import { supabase } from '../services/supabase'; // Ajusta o caminho do import se necessário
 
 export function MotorSincronizacao() {
   useEffect(() => {
@@ -13,6 +12,7 @@ export function MotorSincronizacao() {
         if (!configLocal?.loja_id) return;
 
         // 2. Verifica se a sessão do Supabase (do Admin que ativou a máquina) continua válida no navegador
+        const { supabase } = await import('../services/supabase');
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user?.id) return;
 
