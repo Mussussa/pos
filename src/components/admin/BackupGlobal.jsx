@@ -102,7 +102,7 @@ export function BackupGlobal() {
           await supabase.auth.signOut();
           return setStatus('⚠️ Conta sem loja associada. Regista-te primeiro com uma chave.');
         }
-        setStatus('✅ Login efetuado!');
+        setStatus('✅ Login efetuado. Os dados locais não foram reconstruídos; usa o botão de recuperação quando quiseres importar o backup.');
       } else {
         // 1. BARREIRA DE SEGURANÇA: Verifica a chave ANTES de criar o utilizador
         console.info('[Registo loja] A verificar a chave de ativação.');
@@ -181,90 +181,10 @@ export function BackupGlobal() {
     try {
       const lojaId = lojaIdForcada || lojaAtual?.id || (await obterOuRecuperarLoja(sessao?.user?.id));
       if (!lojaId) return;
-
-      const produtosPendentes = await db.produtos.filter(p => !p.sincronizado).toArray();
-      if (produtosPendentes.length > 0) {
-        const payloadProdutos = produtosPendentes.map(p => ({
-          loja_id: lojaId,
-          codigo: String(p.codigo || p.id),
-          nome: p.nome,
-          categoria: p.categoria || 'Geral',
-          subcategoria: p.subcategoria || '',
-          preco_venda: Number(p.precoVenda) || 0,
-          preco_custo: Number(p.precoCusto) || 0,
-          stock: Number(p.stock) || 0,
-          unidade_medida: p.unidadeMedida || 'Un.'
-        }));
-
-        const { error: erroProdutos } = await supabase.from('produtos').upsert(payloadProdutos, { onConflict: 'loja_id, codigo' });
-        if (erroProdutos) throw erroProdutos;
-        await db.transaction('rw', db.produtos, async () => {
-          for (const prod of produtosPendentes) await db.produtos.update(prod.id, { sincronizado: 1 });
-        });
-      }
-
-      const lotesPendentes = await db.lotes.filter(lote => !lote.sincronizado).toArray();
-      if (lotesPendentes.length > 0) {
-        const payloadLotes = await Promise.all(lotesPendentes.map(async lote => {
-          const produto = await db.produtos.get(lote.produtoId);
-          if (!produto) throw new Error(`Produto local não encontrado para o lote ${lote.id}.`);
-          return {
-            id: lote.id,
-            loja_id: lojaId,
-            produto_codigo: produto.codigo,
-            validade: lote.validade,
-            quantidade: Number(lote.quantidade) || 0
-          };
-        }));
-
-        const { error: erroLotes } = await supabase
-          .from('lotes_produtos')
-          .upsert(payloadLotes, { onConflict: 'id' });
-        if (erroLotes) throw erroLotes;
-
-        await db.transaction('rw', db.lotes, async () => {
-          for (const lote of lotesPendentes) {
-            const loteAtual = await db.lotes.get(lote.id);
-            if (
-              loteAtual &&
-              loteAtual.produtoId === lote.produtoId &&
-              loteAtual.validade === lote.validade &&
-              loteAtual.quantidade === lote.quantidade
-            ) {
-              await db.lotes.update(lote.id, { sincronizado: 1 });
-            }
-          }
-        });
-      }
-
-      const vendasPendentes = await db.vendas.filter(v => !v.sincronizado).toArray();
-      if (vendasPendentes.length > 0) {
-        const payloadVendas = vendasPendentes.map(v => {
-          let valorCalculado = Number(v.total ?? v.valor ?? v.precoTotal ?? v.subtotal ?? v.valor_total ?? 0);
-          if (isNaN(valorCalculado) || valorCalculado === null || valorCalculado === undefined) {
-             valorCalculado = 0;
-          }
-
-          return {
-            loja_id: lojaId,
-            data_venda: v.data ? new Date(v.data).toISOString() : new Date().toISOString(),
-            vendedor_id: String(v.vendedorId || v.vendedor || 'admin'),
-            total: valorCalculado,
-            itens: v.itens || v.produtos || v.cart || []
-          };
-        });
-
-        const { error: erroVendas } = await supabase.from('vendas').insert(payloadVendas);
-        if (!erroVendas) {
-          await db.transaction('rw', db.vendas, async () => {
-            for (const venda of vendasPendentes) await db.vendas.update(venda.id, { sincronizado: 1 });
-          });
-        } else {
-             throw erroVendas;
-        }
-      }
+      const { sincronizarBackupCompleto } = await import('../../services/backupSync');
+      await sincronizarBackupCompleto(supabase, db, lojaId);
     } catch (err) {
-      throw err; 
+      throw err;
     }
   };
 
@@ -291,33 +211,39 @@ export function BackupGlobal() {
   // 3. RECUPERAÇÃO DE EMERGÊNCIA
   const restaurarDaNuvem = async () => {
     if (!navigator.onLine) return setStatus('⚠️ Precisas de internet.');
-    if (!window.confirm('Substituir dados locais pela nuvem?')) return;
+    if (!window.confirm('Primeiro serão enviados os dados locais pendentes. Depois produtos, vendas, lotes e perfil da loja serão reconstruídos a partir da nuvem. As contas locais de colaboradores e o login offline serão preservados. Continuar?')) return;
 
-    setStatus('A descarregar dados...');
+    setStatus('A sincronizar dados locais pendentes e a descarregar o backup...');
     try {
       const lojaId = lojaAtual?.id || (await obterOuRecuperarLoja(sessao?.user?.id));
       if (!lojaId) throw new Error('Loja não identificada.');
 
+      const { buscarTodosOsRegistos } = await import('../../services/backupSync');
+      await executarSincronizacaoSilenciosa(lojaId);
       const [
-        { data: prodNuvem, error: errProd },
-        { data: vendasNuvem, error: errVendas },
-        { data: lotesNuvem, error: errLotes },
+        prodNuvem,
+        vendasNuvem,
+        lotesNuvem,
+        { data: configuracoesNuvem, error: erroConfiguracoes },
       ] = await Promise.all([
-        supabase.from('produtos').select('*').eq('loja_id', lojaId),
-        supabase.from('vendas').select('*').eq('loja_id', lojaId),
-        supabase.from('lotes_produtos').select('*').eq('loja_id', lojaId),
+        buscarTodosOsRegistos(supabase, 'produtos', '*', lojaId),
+        buscarTodosOsRegistos(supabase, 'vendas', '*', lojaId),
+        buscarTodosOsRegistos(supabase, 'lotes_produtos', '*', lojaId),
+        supabase
+          .from('configuracoes_loja')
+          .select('perfil_recibo')
+          .eq('loja_id', lojaId)
+          .maybeSingle(),
       ]);
-      if (errProd) throw errProd;
-      if (errVendas) throw errVendas;
-      if (errLotes) throw errLotes;
+      if (erroConfiguracoes) throw erroConfiguracoes;
 
-      await db.transaction('rw', db.produtos, db.vendas, db.lotes, async () => {
+      await db.transaction('rw', db.produtos, db.vendas, db.lotes, db.sistema, async () => {
         await db.produtos.clear();
         await db.vendas.clear();
         await db.lotes.clear();
 
         const produtosLocaisPorCodigo = new Map();
-        if (prodNuvem && prodNuvem.length > 0) {
+        if (prodNuvem.length > 0) {
           const idsLocais = await db.produtos.bulkAdd(
             prodNuvem.map((p) => ({
               codigo: p.codigo, nome: p.nome, categoria: p.categoria, subcategoria: p.subcategoria,
@@ -330,7 +256,7 @@ export function BackupGlobal() {
             produtosLocaisPorCodigo.set(produto.codigo, idsLocais[indice]);
           });
         }
-        if (lotesNuvem && lotesNuvem.length > 0) {
+        if (lotesNuvem.length > 0) {
           await db.lotes.bulkAdd(lotesNuvem
             .filter(lote => produtosLocaisPorCodigo.has(lote.produto_codigo))
             .map(lote => ({
@@ -341,14 +267,32 @@ export function BackupGlobal() {
               sincronizado: 1
             })));
         }
-        if (vendasNuvem && vendasNuvem.length > 0) {
-          await db.vendas.bulkAdd(vendasNuvem.map(v => ({
-            data: v.data_venda, vendedorId: v.vendedor_id, total: Number(v.total),
-            itens: v.itens || [], sincronizado: 1
+        if (vendasNuvem.length > 0) {
+          await db.vendas.bulkAdd(vendasNuvem.map((v) => ({
+            data: v.data_venda,
+            vendedorId: v.vendedor_id,
+            total: Number(v.total),
+            lucroTotal: v.lucro_total == null ? null : Number(v.lucro_total),
+            sync_id: v.id_local || crypto.randomUUID(),
+            itens: (v.itens || []).map((item) => ({
+              ...item,
+              produtoId: produtosLocaisPorCodigo.get(item.codigo) ?? item.produtoId ?? null,
+            })),
+            sincronizado: 1,
           })));
         }
+
+        if (configuracoesNuvem?.perfil_recibo) {
+          await db.sistema.put({
+            id: 'perfil_loja',
+            ...configuracoesNuvem.perfil_recibo,
+            sincronizado: 1,
+          });
+        } else {
+          await db.sistema.delete('perfil_loja');
+        }
       });
-      setStatus(`✅ Base reconstruída!`);
+      setStatus(`✅ Backup reconstruído: ${prodNuvem.length} produtos, ${lotesNuvem.length} lotes e ${vendasNuvem.length} vendas. Utilizadores locais e login offline preservados.`);
     } catch (err) {
       setStatus(`🚨 Erro: ${err.message}`);
     }
@@ -423,7 +367,12 @@ export function BackupGlobal() {
           <h3 className="text-lg font-bold text-zinc-800 flex items-center gap-2 mb-4">
             <DownloadCloud className="text-orange-500" /> Recuperação
           </h3>
-          <p className="text-sm mb-6">Substitui os dados locais pelos oficiais guardados na nuvem.</p>
+          <p className="text-sm mb-2">
+            O login não reconstrói nem apaga os dados deste dispositivo. A reconstrução só começa quando clicares no botão.
+          </p>
+          <p className="text-sm mb-6">
+            Primeiro envia os dados locais pendentes; depois atualiza produtos, vendas, lotes e perfil da loja. As contas de colaboradores e o login offline são preservados.
+          </p>
           <button onClick={restaurarDaNuvem} className="w-full border-2 border-orange-500 text-orange-600 font-bold p-3 rounded">
             Reconstruir Base de Dados
           </button>

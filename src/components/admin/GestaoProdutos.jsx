@@ -266,25 +266,22 @@ export function GestaoProdutos() {
       const produtoParaApagar = await db.produtos.get(id);
 
       // 2. Apaga localmente no Dexie
-      await db.transaction("rw", db.produtos, db.lotes, async () => {
+      const configLocal = await db.sistema.get('config_loja');
+      await db.transaction("rw", db.produtos, db.lotes, db.sistema, async () => {
+        if (produtoParaApagar && configLocal?.loja_id) {
+          const fila = await db.sistema.get('backup_exclusoes_pendentes');
+          const items = (fila?.items || []).filter(
+            (item) => item.loja_id !== configLocal.loja_id || item.codigo !== produtoParaApagar.codigo
+          );
+          items.push({ loja_id: configLocal.loja_id, codigo: produtoParaApagar.codigo });
+          await db.sistema.put({ id: 'backup_exclusoes_pendentes', items });
+        }
         await db.lotes.where("produtoId").equals(id).delete();
         await db.produtos.delete(id);
       });
       if (produtoEmEdicao === id) cancelarEdicao();
 
-      // 3. APAGA NO SUPABASE (Mata o Zombie)
-      if (navigator.onLine && produtoParaApagar) {
-        const configLocal = await db.sistema.get('config_loja');
-        if (configLocal?.loja_id) {
-          const { error } = await supabase
-            .from('produtos')
-            .delete()
-            .eq('loja_id', configLocal.loja_id)
-            .eq('codigo', produtoParaApagar.codigo);
-            
-          if (error) console.error("Erro ao apagar na nuvem:", error);
-        }
-      }
+      if (navigator.onLine) window.dispatchEvent(new Event('online'));
     } catch (err) {
       console.error("Erro ao processar exclusão:", err);
     }

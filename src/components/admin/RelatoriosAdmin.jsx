@@ -209,7 +209,7 @@ export function RelatoriosAdmin() {
           buscarTodosOsRegistos(
             supabase,
             'vendas',
-            'id,data_venda,vendedor_id,total,itens',
+            'id,id_local,data_venda,vendedor_id,total,itens,lucro_total',
             configLoja.loja_id,
           ),
           buscarTodosOsRegistos(
@@ -269,6 +269,7 @@ export function RelatoriosAdmin() {
       ...venda,
       data: venda.data_venda,
       total: Number(venda.total) || 0,
+      lucroTotal: venda.lucro_total == null ? null : Number(venda.lucro_total),
       itens: venda.itens || [],
       sincronizado: true,
     }));
@@ -298,11 +299,14 @@ export function RelatoriosAdmin() {
             (item.nome && produtosParaLucro.porNome.get(String(item.nome).trim().toLowerCase()));
           const preco = Number(item.preco ?? item.precoVenda);
           const quantidade = Number(item.quantidade);
-          if (!produto || !Number.isFinite(preco) || !Number.isFinite(quantidade)) {
+          const custoHistorico = item.preco_custo ?? item.precoCusto;
+          const custo = custoHistorico == null ? produto?.precoCusto : Number(custoHistorico);
+          if (!Number.isFinite(preco) || !Number.isFinite(quantidade) || !Number.isFinite(custo)) {
             lucroIncompleto = true;
             return;
           }
-          lucroTotal += (preco - produto.precoCusto) * quantidade;
+          if (custoHistorico == null) lucroIncompleto = true;
+          lucroTotal += (preco - custo) * quantidade;
         });
 
         return {
