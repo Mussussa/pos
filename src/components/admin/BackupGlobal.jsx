@@ -220,6 +220,25 @@ export function BackupGlobal() {
 
       const { buscarTodosOsRegistos } = await import('../../services/backupSync');
       await executarSincronizacaoSilenciosa(lojaId);
+      const [produtosPendentes, lotesPendentes, vendasPendentes, perfilLojaLocal] = await Promise.all([
+        db.produtos.filter((produto) => !produto.sincronizado).count(),
+        db.lotes.filter((lote) => !lote.sincronizado).count(),
+        db.vendas.filter((venda) => !venda.sincronizado || !venda.sync_id).count(),
+        db.sistema.get('perfil_loja'),
+      ]);
+      const exclusoesPendentes = await db.sistema.get('backup_exclusoes_pendentes');
+      const temExclusoesPendentes = (exclusoesPendentes?.items || [])
+        .some((item) => item.loja_id === lojaId);
+      if (
+        produtosPendentes > 0 ||
+        lotesPendentes > 0 ||
+        vendasPendentes > 0 ||
+        perfilLojaLocal?.sincronizado === 0 ||
+        temExclusoesPendentes
+      ) {
+        throw new Error('Existem alterações locais que ainda não foram confirmadas na nuvem. Nada foi reconstruído; tenta novamente quando a sincronização terminar.');
+      }
+
       const [
         prodNuvem,
         vendasNuvem,

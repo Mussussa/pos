@@ -43,17 +43,22 @@ function normalizarItens(itens = []) {
   }));
 }
 
-function correspondeVendaLegada(vendaLocal, vendaNuvem) {
-  const dataLocal = Date.parse(vendaLocal.data || vendaLocal.data_venda);
-  const dataNuvem = Date.parse(vendaNuvem.data_venda);
-  if (!Number.isFinite(dataLocal) || dataLocal !== dataNuvem) return false;
-  if (String(vendaLocal.vendedorId || vendaLocal.vendedor || 'admin') !== String(vendaNuvem.vendedor_id)) return false;
-  if (Number(vendaLocal.total ?? vendaLocal.valor ?? vendaLocal.precoTotal ?? vendaLocal.subtotal ?? 0) !== Number(vendaNuvem.total)) {
-    return false;
-  }
+function obterChaveVendaLegada(venda, remota = false) {
+  const data = Date.parse(remota ? venda.data_venda : (venda.data || venda.data_venda));
+  if (!Number.isFinite(data)) return null;
 
-  return JSON.stringify(normalizarItens(vendaLocal.itens || vendaLocal.produtos || vendaLocal.cart)) ===
-    JSON.stringify(normalizarItens(vendaNuvem.itens));
+  const vendedor = remota
+    ? String(venda.vendedor_id)
+    : String(venda.vendedorId || venda.vendedor || 'admin');
+  const total = Number(
+    remota
+      ? venda.total
+      : (venda.total ?? venda.valor ?? venda.precoTotal ?? venda.subtotal ?? venda.valor_total ?? 0)
+  );
+  const itens = remota
+    ? venda.itens
+    : (venda.itens || venda.produtos || venda.cart);
+  return JSON.stringify([data, vendedor, total, normalizarItens(itens)]);
 }
 
 function prepararItensVenda(venda) {
@@ -190,7 +195,15 @@ export async function sincronizarBackupCompleto(supabase, db, lojaId) {
     const vendasNuvem = precisaAssociarHistoricoAntigo
       ? await buscarTodosOsRegistos(supabase, 'vendas', 'id,id_local,data_venda,vendedor_id,total,itens', lojaId)
       : [];
-    const vendasLegadasDisponiveis = vendasNuvem.filter((venda) => !venda.id_local);
+    const vendasLegadasDisponiveis = new Map();
+    for (const venda of vendasNuvem) {
+      if (venda.id_local) continue;
+      const chave = obterChaveVendaLegada(venda, true);
+      if (!chave) continue;
+      const correspondencias = vendasLegadasDisponiveis.get(chave) || [];
+      correspondencias.push(venda);
+      vendasLegadasDisponiveis.set(chave, correspondencias);
+    }
     const vendasParaInserir = [];
 
     for (const venda of vendasPendentes) {
@@ -206,9 +219,10 @@ export async function sincronizarBackupCompleto(supabase, db, lojaId) {
         itens: prepararItensVenda(venda),
       };
 
-      const indiceLegado = vendasLegadasDisponiveis.findIndex((remota) => correspondeVendaLegada(venda, remota));
-      if (indiceLegado >= 0) {
-        const [vendaLegada] = vendasLegadasDisponiveis.splice(indiceLegado, 1);
+      const chaveLegada = obterChaveVendaLegada(venda);
+      const correspondencias = chaveLegada ? vendasLegadasDisponiveis.get(chaveLegada) : null;
+      if (correspondencias?.length) {
+        const vendaLegada = correspondencias.shift();
         const { error } = await supabase
           .from('vendas')
           .update({
