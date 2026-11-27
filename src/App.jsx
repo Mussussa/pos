@@ -1,18 +1,39 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from "react-router-dom";
 import { Package, BarChart3, ShoppingCart, LogOut, DatabaseBackup, Users } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db"; // Certifica-te que este caminho aponta para o teu db.js
 
-import { GestaoProdutos } from "./components/admin/GestaoProdutos";
-import { RelatoriosAdmin } from "./components/admin/RelatoriosAdmin";
-import { BackupGlobal } from "./components/admin/BackupGlobal";
-import { GestaoUsuarios } from "./components/admin/GestaoUsuarios";
-import { TerminalVendas } from "./components/vendedor/TerminalVendas";
 import { Login } from "./components/Login";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { MotorSincronizacao } from "./components/MotorSincronizacao";
+
+const GestaoProdutos = lazy(() =>
+  import("./components/admin/GestaoProdutos").then((module) => ({
+    default: module.GestaoProdutos,
+  })),
+);
+const RelatoriosAdmin = lazy(() =>
+  import("./components/admin/RelatoriosAdmin").then((module) => ({
+    default: module.RelatoriosAdmin,
+  })),
+);
+const BackupGlobal = lazy(() =>
+  import("./components/admin/BackupGlobal").then((module) => ({
+    default: module.BackupGlobal,
+  })),
+);
+const GestaoUsuarios = lazy(() =>
+  import("./components/admin/GestaoUsuarios").then((module) => ({
+    default: module.GestaoUsuarios,
+  })),
+);
+const TerminalVendas = lazy(() =>
+  import("./components/vendedor/TerminalVendas").then((module) => ({
+    default: module.TerminalVendas,
+  })),
+);
 
 function Sidebar() {
   const location = useLocation();
@@ -120,14 +141,16 @@ function SistemaPrincipal() {
     <div className="flex h-screen overflow-hidden bg-zinc-950 print:bg-white font-sans text-zinc-100">
       <Sidebar />
       <main className="flex-1 h-screen overflow-y-auto print:overflow-visible transition-all duration-300">
-        <Routes>
-          <Route path="/pos" element={<TerminalVendas />} />
-          <Route path="/" element={<RotaProtegida apenasAdmin={true}><RelatoriosAdmin /></RotaProtegida>} />
-          <Route path="/stock" element={<RotaProtegida apenasAdmin={true}><GestaoProdutos /></RotaProtegida>} />
-          <Route path="/backup" element={<RotaProtegida apenasAdmin={true}><BackupGlobal /></RotaProtegida>} />
-          <Route path="/usuarios" element={<RotaProtegida apenasAdmin={true}><GestaoUsuarios /></RotaProtegida>} />
-          <Route path="*" element={<Navigate to={user.role === "admin" ? "/" : "/pos"} />} />
-        </Routes>
+        <Suspense fallback={<div className="p-6 text-zinc-500">A carregar página...</div>}>
+          <Routes>
+            <Route path="/pos" element={<TerminalVendas />} />
+            <Route path="/" element={<RotaProtegida apenasAdmin={true}><RelatoriosAdmin /></RotaProtegida>} />
+            <Route path="/stock" element={<RotaProtegida apenasAdmin={true}><GestaoProdutos /></RotaProtegida>} />
+            <Route path="/backup" element={<RotaProtegida apenasAdmin={true}><BackupGlobal /></RotaProtegida>} />
+            <Route path="/usuarios" element={<RotaProtegida apenasAdmin={true}><GestaoUsuarios /></RotaProtegida>} />
+            <Route path="*" element={<Navigate to={user.role === "admin" ? "/" : "/pos"} />} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   );

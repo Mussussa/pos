@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { db } from "../../db";
 import { supabase } from "../../services/supabase"; // Importação crucial para apagar na nuvem
 import { useLiveQuery } from "dexie-react-hooks";
-import { Edit, Trash2, X } from "lucide-react";
+import { Edit, Search, Trash2, X } from "lucide-react";
 
 const mapaCategorias = {
   alimentacao: { 
@@ -34,9 +34,24 @@ const mapaCategorias = {
 export function GestaoProdutos() {
   const produtos = useLiveQuery(() => db.produtos.toArray());
   const lotes = useLiveQuery(() => db.lotes.toArray());
+  const lotesPorProduto = useMemo(() => {
+    const agrupados = new Map();
+    (lotes || []).forEach((lote) => {
+      if (Number(lote.quantidade) <= 0) return;
+      const registos = agrupados.get(lote.produtoId) || [];
+      registos.push({
+        quantidade: Number(lote.quantidade),
+        validade: lote.validade,
+      });
+      agrupados.set(lote.produtoId, registos);
+    });
+    return agrupados;
+  }, [lotes]);
   const [erro, setErro] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("todas");
+  const [pesquisaProduto, setPesquisaProduto] = useState("");
 
+  const formularioRef = useRef(null);
   const [produtoEmEdicao, setProdutoEmEdicao] = useState(null);
   const [codigoNumerico, setCodigoNumerico] = useState("");
   const [nome, setNome] = useState("");
@@ -54,13 +69,17 @@ export function GestaoProdutos() {
     setCodigoNumerico(produto.codigo ? produto.codigo.substring(1) : "");
     setNome(produto.nome);
     setCategoria(produto.categoria);
-    setSubcategoria(produto.subcategoria || mapaCategorias[produto.categoria].subcategorias[0]);
+    setSubcategoria(
+      produto.subcategoria ||
+        mapaCategorias[produto.categoria]?.subcategorias[0] ||
+        "",
+    );
     setPrecoCusto(produto.precoCusto);
     setPrecoVenda(produto.precoVenda);
     setStock(produto.stock);
     setUnidadeMedida(produto.unidadeMedida || "Un.");
     setValidade("");
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    formularioRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const cancelarEdicao = () => {
@@ -99,6 +118,7 @@ export function GestaoProdutos() {
     if (!Number.isFinite(pVenda) || !Number.isFinite(pCusto) || pVenda <= 0 || pCusto < 0) return setErro("Preços inválidos.");
     if (pVenda < pCusto) return setErro("O preço de venda não pode ser inferior ao preço de custo.");
     if (!Number.isFinite(pStock) || pStock < 0) return setErro("O stock não pode ser negativo.");
+    if (!produtos) return setErro("A lista de produtos ainda está a carregar. Tenta novamente.");
 
     const duplicado = produtos.find(p => 
       (p.nome.toLowerCase() === pNome.toLowerCase() || p.codigo === pCodigo) && p.id !== produtoEmEdicao
@@ -248,8 +268,15 @@ export function GestaoProdutos() {
     }
   };
 
-  const produtosFiltrados = produtos?.filter((p) =>
-    filtroCategoria === "todas" ? true : p.categoria === filtroCategoria
+  const produtosFiltrados = useMemo(
+    () =>
+      produtos?.filter((p) =>
+        (filtroCategoria === "todas" || p.categoria === filtroCategoria) &&
+        `${p.nome || ""} ${p.codigo || ""}`
+          .toLocaleLowerCase()
+          .includes(pesquisaProduto.trim().toLocaleLowerCase())
+      ),
+    [produtos, filtroCategoria, pesquisaProduto],
   );
 
   return (
@@ -265,6 +292,7 @@ export function GestaoProdutos() {
       )}
 
       <form
+        ref={formularioRef}
         onSubmit={guardarProduto}
         className={`grid grid-cols-1 md:grid-cols-2 gap-4 p-6 rounded-lg shadow-sm border transition-colors ${
           produtoEmEdicao ? "bg-white border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.1)]" : "bg-white border-zinc-200"
@@ -429,6 +457,21 @@ export function GestaoProdutos() {
             <option value="veiculos_pecas">Veículos e Peças</option>
             <option value="diversos">Diversos</option>
           </select>
+
+          <div className="relative w-full md:w-80">
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400"
+              size={18}
+            />
+            <input
+              type="search"
+              value={pesquisaProduto}
+              onChange={(e) => setPesquisaProduto(e.target.value)}
+              placeholder="Pesquisar por nome ou código..."
+              aria-label="Pesquisar produtos por nome ou código"
+              className="w-full bg-white border border-zinc-300 text-zinc-900 placeholder-zinc-400 py-2 pl-10 pr-3 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+            />
+          </div>
         </div>
 
         <ul className="space-y-3">
@@ -437,7 +480,12 @@ export function GestaoProdutos() {
               key={p.id}
               className="bg-white border border-zinc-200 p-4 flex flex-col md:flex-row justify-between rounded-lg shadow-sm items-start md:items-center gap-2 hover:border-orange-300 transition-colors"
             >
-              <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => iniciarEdicao(p)}
+                className="flex items-center gap-3 text-left"
+                title="Editar produto e voltar ao formulário"
+              >
                 <span className="font-mono bg-zinc-100 text-zinc-600 px-2 py-1 rounded text-sm border border-zinc-200">
                   {p.codigo}
                 </span>
@@ -449,13 +497,13 @@ export function GestaoProdutos() {
                     {p.categoria} &gt; {p.subcategoria}
                   </span>
                   <span className="text-xs text-zinc-500 mt-1">
-                    Lotes: {(lotes || [])
-                      .filter((lote) => lote.produtoId === p.id && Number(lote.quantidade) > 0)
-                        .map((lote) => `${Number(lote.quantidade)} ${p.unidadeMedida || "Un."} — ${lote.validade || "sem validade"}`)
+                    Lotes: {lotesPorProduto
+                      .get(p.id)
+                      ?.map((lote) => `${lote.quantidade} ${p.unidadeMedida || "Un."} — ${lote.validade || "sem validade"}`)
                       .join(" | ") || "stock anterior sem lotes registados"}
                   </span>
                 </div>
-              </div>
+              </button>
               
               <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end mt-4 md:mt-0 border-t border-zinc-100 pt-4 md:border-0 md:pt-0">
                 <div className="text-right flex items-center gap-4">

@@ -102,31 +102,72 @@ export function BackupGlobal() {
         setStatus('✅ Login efetuado!');
       } else {
         // 1. BARREIRA DE SEGURANÇA: Verifica a chave ANTES de criar o utilizador
+        console.info('[Registo loja] A verificar a chave de ativação.');
         const { data: chaveValida, error: erroCheck } = await supabase.rpc('verificar_chave', { p_chave: chave });
         
-        if (erroCheck || !chaveValida) {
-          return setStatus('🚨 Erro: A Chave de Licença é inválida ou já foi utilizada.'); // Aborta aqui e não sai da tela!
+        if (erroCheck) {
+          console.error('[Registo loja] Falha ao verificar chave.', {
+            code: erroCheck.code,
+            message: erroCheck.message,
+          });
+          return setStatus(`🚨 Erro ao verificar chave: ${erroCheck.message}`);
         }
 
+        if (!chaveValida) {
+          console.warn('[Registo loja] Chave inválida ou já utilizada.');
+          return setStatus('🚨 Erro: A Chave de Licença é inválida ou já foi utilizada.'); // Aborta aqui e não sai da tela!
+        }
+        console.info('[Registo loja] Chave validada.');
+
         // 2. Chave válida! Agora sim, cria a conta no Supabase Auth
+        console.info('[Registo loja] A criar conta de autenticação.');
         const { data: authData, error: authError } = await supabase.auth.signUp({ email, password: senha });
-        if (authError) throw authError;
+        if (authError) {
+          console.error('[Registo loja] Falha ao criar conta.', {
+            status: authError.status,
+            code: authError.code,
+            message: authError.message,
+          });
+          throw authError;
+        }
+
+        console.info('[Registo loja] Conta criada.', {
+          utilizadorCriado: Boolean(authData.user),
+          sessaoDisponivel: Boolean(authData.session),
+        });
+        if (!authData.session) {
+          console.warn('[Registo loja] O Supabase não devolveu sessão após o registo; a RPC exige utilizador autenticado. Confirma a configuração de confirmação de email.');
+        }
 
         // 3. Regista a loja e queima a chave
+        console.info('[Registo loja] A chamar RPC registar_loja_com_chave.');
         const { data: rpcData, error: rpcError } = await supabase.rpc('registar_loja_com_chave', {
           p_nome_loja: nomeLoja, p_chave: chave
         });
         
         if (rpcError) {
+          console.error('[Registo loja] RPC falhou.', {
+            code: rpcError.code,
+            message: rpcError.message,
+            details: rpcError.details,
+            hint: rpcError.hint,
+            sessaoDisponivel: Boolean(authData.session),
+          });
           await supabase.auth.signOut(); // Limpa se houver erro interno
           return setStatus(`🚨 Erro ao registar a loja: ${rpcError.message}`);
         }
 
+        console.info('[Registo loja] RPC concluída com sucesso.');
         await db.sistema.put({ id: 'config_loja', loja_id: rpcData.loja_id, nome_loja: nomeLoja });
         setLojaAtual({ id: rpcData.loja_id, nome: nomeLoja });
         setStatus('✅ Loja ativada e conectada!');
       }
     } catch (err) {
+      console.error('[Autenticação Supabase] Operação falhou.', {
+        status: err.status,
+        code: err.code,
+        message: err.message,
+      });
       setStatus(`🚨 Erro: ${err.message}`);
     }
   };
@@ -255,16 +296,17 @@ export function BackupGlobal() {
       const lojaId = lojaAtual?.id || (await obterOuRecuperarLoja(sessao?.user?.id));
       if (!lojaId) throw new Error('Loja não identificada.');
 
-      const { data: prodNuvem, error: errProd } = await supabase.from('produtos').select('*').eq('loja_id', lojaId);
+      const [
+        { data: prodNuvem, error: errProd },
+        { data: vendasNuvem, error: errVendas },
+        { data: lotesNuvem, error: errLotes },
+      ] = await Promise.all([
+        supabase.from('produtos').select('*').eq('loja_id', lojaId),
+        supabase.from('vendas').select('*').eq('loja_id', lojaId),
+        supabase.from('lotes_produtos').select('*').eq('loja_id', lojaId),
+      ]);
       if (errProd) throw errProd;
-
-      const { data: vendasNuvem, error: errVendas } = await supabase.from('vendas').select('*').eq('loja_id', lojaId);
       if (errVendas) throw errVendas;
-
-      const { data: lotesNuvem, error: errLotes } = await supabase
-        .from('lotes_produtos')
-        .select('*')
-        .eq('loja_id', lojaId);
       if (errLotes) throw errLotes;
 
       await db.transaction('rw', db.produtos, db.vendas, db.lotes, async () => {
@@ -274,14 +316,17 @@ export function BackupGlobal() {
 
         const produtosLocaisPorCodigo = new Map();
         if (prodNuvem && prodNuvem.length > 0) {
-          for (const p of prodNuvem) {
-            const idLocal = await db.produtos.add({
+          const idsLocais = await db.produtos.bulkAdd(
+            prodNuvem.map((p) => ({
               codigo: p.codigo, nome: p.nome, categoria: p.categoria, subcategoria: p.subcategoria,
               precoVenda: Number(p.preco_venda), precoCusto: Number(p.preco_custo), stock: Number(p.stock),
               unidadeMedida: p.unidade_medida, sincronizado: 1
-            });
-            produtosLocaisPorCodigo.set(p.codigo, idLocal);
-          }
+            })),
+            { allKeys: true },
+          );
+          prodNuvem.forEach((produto, indice) => {
+            produtosLocaisPorCodigo.set(produto.codigo, idsLocais[indice]);
+          });
         }
         if (lotesNuvem && lotesNuvem.length > 0) {
           await db.lotes.bulkAdd(lotesNuvem

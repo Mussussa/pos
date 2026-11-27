@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import bcrypt from 'bcryptjs';
 import { useAuth } from '../../AuthContext';
 import { UserPlus, Trash2, Shield, User, Store, Save, Users } from 'lucide-react';
 export function GestaoUsuarios() {
@@ -62,8 +61,9 @@ export function GestaoUsuarios() {
       const existe = await db.usuarios.where('username').equals(userLimpo).first();
       if (existe) return setErroUsers('Este nome de utilizador já existe no sistema.');
 
-      const salt = bcrypt.genSaltSync(10);
-      const hash = bcrypt.hashSync(password, salt);
+      const { default: bcrypt } = await import('bcryptjs');
+      const salt = await bcrypt.genSalt(10);
+      const hash = await bcrypt.hash(password, salt);
 
       await db.usuarios.add({
         username: userLimpo,

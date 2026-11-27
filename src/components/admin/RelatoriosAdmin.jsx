@@ -6,8 +6,6 @@ import {
   LineChart, Line
 } from 'recharts';
 import { Search, ChevronLeft, ChevronRight, FileText, Download, Calendar } from 'lucide-react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 // ==========================================
 // MÓDULO: SIMULADOR DE PREÇO MÍNIMO (TEMA CLARO MISTO)
@@ -17,18 +15,19 @@ function ModuloPrecoMinimo({ produtos }) {
   const [paginaAtual, setPaginaAtual] = useState(1);
   const itensPorPagina = 10;
 
-  const { produtosFiltrados, totalPaginas, produtosPaginados } = useMemo(() => {
-    if (!produtos) return { produtosFiltrados: [], totalPaginas: 0, produtosPaginados: [] };
-    
-    const filtrados = produtos.filter(p => 
-      p.nome.toLowerCase().includes(busca.toLowerCase())
-    );
-    
-    const paginas = Math.ceil(filtrados.length / itensPorPagina);
-    const paginados = filtrados.slice((paginaAtual - 1) * itensPorPagina, paginaAtual * itensPorPagina);
-    
-    return { produtosFiltrados: filtrados, totalPaginas: paginas, produtosPaginados: paginados };
-  }, [produtos, busca, paginaAtual]);
+  const produtosFiltrados = useMemo(() => {
+    const termo = busca.toLowerCase();
+    return (produtos || []).filter((p) => p.nome.toLowerCase().includes(termo));
+  }, [produtos, busca]);
+  const totalPaginas = Math.ceil(produtosFiltrados.length / itensPorPagina);
+  const produtosPaginados = useMemo(
+    () =>
+      produtosFiltrados.slice(
+        (paginaAtual - 1) * itensPorPagina,
+        paginaAtual * itensPorPagina,
+      ),
+    [produtosFiltrados, paginaAtual],
+  );
 
   if (!produtos || produtos.length === 0) return null;
 
@@ -163,51 +162,74 @@ export function RelatoriosAdmin() {
   }, [vendasRaw, filtroTempo]);
 
   // 2. Cálculos Gerais (CORRIGIDO com .total || .totalVenda)
-  const totalReceitas = vendas.reduce((acc, venda) => acc + Number(venda.total || venda.totalVenda || 0), 0);
-  const totalLucro = vendas.reduce((acc, venda) => acc + Number(venda.lucroTotal || 0), 0);
+  const resumo = useMemo(() => {
+    const categoriasMap = {
+      alimentacao: { name: 'Alimentação', stock: 0, vendido: 0 },
+      bebidas: { name: 'Bebidas', stock: 0, vendido: 0 },
+      limpeza: { name: 'Limpeza', stock: 0, vendido: 0 },
+      diversos: { name: 'Diversos', stock: 0, vendido: 0 }
+    };
+    const prodCat = new Map();
+    (produtos || []).forEach((produto) => {
+      prodCat.set(produto.id, produto.categoria);
+      if (categoriasMap[produto.categoria]) {
+        categoriasMap[produto.categoria].stock += Number(produto.stock || 0);
+      }
+    });
+
+    const contagemProdutos = new Map();
+    vendas.forEach((venda) => {
+      venda.itens?.forEach((item) => {
+        const categoria = prodCat.get(item.produtoId);
+        if (categoria && categoriasMap[categoria]) {
+          categoriasMap[categoria].vendido += Number(item.quantidade || 0);
+        }
+        contagemProdutos.set(
+          item.nome,
+          (contagemProdutos.get(item.nome) || 0) + Number(item.quantidade || 0),
+        );
+      });
+    });
+
+    const vendasPorDia = new Map();
+    [...vendas].reverse().forEach((venda) => {
+      const dataCurta = new Date(venda.data || venda.data_venda).toLocaleDateString(
+        'pt-MZ',
+        { day: '2-digit', month: '2-digit' },
+      );
+      const dadosDia = vendasPorDia.get(dataCurta) || {
+        data: dataCurta,
+        receita: 0,
+        lucro: 0,
+      };
+      dadosDia.receita += Number(venda.total || venda.totalVenda || 0);
+      dadosDia.lucro += Number(venda.lucroTotal || 0);
+      vendasPorDia.set(dataCurta, dadosDia);
+    });
+
+    return {
+      totalReceitas: vendas.reduce(
+        (total, venda) => total + Number(venda.total || venda.totalVenda || 0),
+        0,
+      ),
+      totalLucro: vendas.reduce(
+        (total, venda) => total + Number(venda.lucroTotal || 0),
+        0,
+      ),
+      dadosCategorias: Object.values(categoriasMap),
+      dadosTopProdutos: [...contagemProdutos]
+        .map(([nome, quantidade]) => ({ nome, quantidade }))
+        .sort((a, b) => b.quantidade - a.quantidade)
+        .slice(0, 5),
+      dadosEvolucao: [...vendasPorDia.values()],
+    };
+  }, [vendas, produtos]);
+  const { totalReceitas, totalLucro, dadosCategorias, dadosTopProdutos, dadosEvolucao } = resumo;
   const numeroVendas = vendas.length;
 
-  // 3. Processamento para Gráficos
-  const categoriasMap = {
-    alimentacao: { name: 'Alimentação', stock: 0, vendido: 0 },
-    bebidas: { name: 'Bebidas', stock: 0, vendido: 0 },
-    limpeza: { name: 'Limpeza', stock: 0, vendido: 0 },
-    diversos: { name: 'Diversos', stock: 0, vendido: 0 }
-  };
-  
-  const prodCat = {};
-  produtos?.forEach(p => {
-    prodCat[p.id] = p.categoria;
-    if (categoriasMap[p.categoria]) categoriasMap[p.categoria].stock += Number(p.stock || 0);
-  });
-
-  const contagemProdutos = {};
-  vendas.forEach(v => {
-    v.itens?.forEach(item => {
-      const cat = prodCat[item.produtoId];
-      if (cat && categoriasMap[cat]) categoriasMap[cat].vendido += Number(item.quantidade || 0);
-      
-      if (!contagemProdutos[item.nome]) contagemProdutos[item.nome] = 0;
-      contagemProdutos[item.nome] += Number(item.quantidade || 0);
-    });
-  });
-
-  const dadosCategorias = Object.values(categoriasMap);
-  const dadosTopProdutos = Object.entries(contagemProdutos)
-    .map(([nome, quantidade]) => ({ nome, quantidade }))
-    .sort((a, b) => b.quantidade - a.quantidade)
-    .slice(0, 5);
-
-  const vendasPorDia = {};
-  [...vendas].reverse().forEach(v => {
-    const dataCurta = new Date(v.data || v.data_venda).toLocaleDateString('pt-MZ', { day: '2-digit', month: '2-digit' });
-    if (!vendasPorDia[dataCurta]) vendasPorDia[dataCurta] = { data: dataCurta, receita: 0, lucro: 0 };
-    vendasPorDia[dataCurta].receita += Number(v.total || v.totalVenda || 0);
-    vendasPorDia[dataCurta].lucro += Number(v.lucroTotal || 0);
-  });
-  const dadosEvolucao = Object.values(vendasPorDia);
   const alertasValidade = useMemo(() => {
     if (!hojeValidade) return [];
+    const produtosPorId = new Map((produtos || []).map((produto) => [produto.id, produto]));
     return (lotes || [])
       .filter(lote => lote.validade && Number(lote.quantidade) > 0)
       .map(lote => {
@@ -215,7 +237,7 @@ export function RelatoriosAdmin() {
         const diasRestantes = Math.ceil((dataValidade - hojeValidade) / 86400000);
         return {
           ...lote,
-          produto: (produtos || []).find(item => item.id === lote.produtoId),
+          produto: produtosPorId.get(lote.produtoId),
           diasRestantes
         };
       })
@@ -224,7 +246,11 @@ export function RelatoriosAdmin() {
   }, [lotes, produtos, hojeValidade]);
 
   // 5. Função de Exportação para PDF (CORRIGIDO)
-  const exportarPDF = () => {
+  const exportarPDF = async () => {
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ]);
     const doc = new jsPDF();
     
     // Cabeçalho Principal
